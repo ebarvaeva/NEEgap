@@ -64,7 +64,7 @@ Raw EddyPro / Biomet / FluxNet CSVs
 ## 2. Repository Structure
 
 ```
-GapFillNEE/
+NEEgap/
 │
 ├── data/                               # Raw and prepared data (not in repo)
 │   ├── raw_data/                       # EddyPro, biomet, FluxNet, meta CSVs
