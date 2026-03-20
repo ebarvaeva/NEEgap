@@ -1,4 +1,4 @@
-# GapFillNEE
+# NEEgap
 
 A complete R pipeline for gap-filling eddy-covariance NEE (Net Ecosystem Exchange) at managed grassland sites, comparing machine-learning models against process-based benchmarks and quantifying the contribution of management variables (grazing, fertilisation, canopy structure) to gap-filling accuracy.
 
