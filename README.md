@@ -479,6 +479,3 @@ graphs/
 
 ## References
 
-- Kljun, N., Calanca, P., Rotach, M.W., Schmid, H.P. (2015). A simple two-dimensional parameterisation for Flux Footprint Prediction (FFP). *Geoscientific Model Development*, 8, 3695–3713. https://doi.org/10.5194/gmd-8-3695-2015
-- McCree, K.J. (1972). The action spectrum, absorptance and quantum yield of photosynthesis in crop plants. *Agricultural Meteorology*, 9, 191–216.
-- Wutzler, T., Lucas-Moffat, A., Migliavacca, M., Knauer, J., Sickel, K., Šigut, L., Menzer, O., Reichstein, M. (2018). Basic and extensible post-processing of eddy covariance flux data with EddyPro in combination with REddyProc. *Biogeosciences*, 15, 5015–5030. https://doi.org/10.5194/bg-15-5015-2018
