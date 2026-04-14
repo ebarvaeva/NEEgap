@@ -87,8 +87,6 @@ DATA_FILE <- here::here(
 
 # --- Predictor (feature) set -------------------------------------------------
 # Columns absent from the data are silently dropped.
-# Including "Grazing_days_since" activates the Phytomass Index (PI) AND
-# enables per-regrowth-period flux partitioning for Reco and GPP.
 FEATURE_SET <- c(
   # --- Radiation ---
   "PPFD",                    # photosynthetic photon flux density (µmol m⁻² s⁻¹)
