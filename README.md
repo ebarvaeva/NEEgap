@@ -44,8 +44,8 @@ Raw EddyPro / Biomet / FluxNet CSVs
      RF     MLP    XGB   miniRECgap    MDS
              │
              ▼
-   [3]  Management Ablation      run_management_effect.R
-        (BASE + each management variable, in isolation)
+   [3]  Management Effect (Feature Addition)      run_management_effect.R
+        (BASE + each management variable)
              │
              ▼
    [4]  Metrics & Plots          metrics/*.R
@@ -55,7 +55,6 @@ Raw EddyPro / Biomet / FluxNet CSVs
 **What the pipeline does:**
 
 - Fills gaps in half-hourly NEE measurements using five independent models.
-- Derives Reco and GPP post-hoc from the gap-filled NEE through flux partitioning, guaranteeing the carbon-balance identity NEE = Reco − GPP at every gap row.
 - Evaluates each model at four gap sizes (S ≈ 3 d, M ≈ 7 d, L ≈ 14 d, VL ≈ 30 d) via a leave-one-gap-out cross-validation.
 - Isolates the contribution of each management variable to accuracy using a feature-addition ablation study.
 
@@ -105,7 +104,7 @@ NEEgap/
 ├── scripts/
 │   ├── run_model.R                     # [2] Entry point: RF | MLP | XGBoost
 │   ├── run_MDS_miniRECgap.R            # [2] Entry point: MDS | miniRECgap
-│   └── run_management_effect.R         # [3] Ablation: set MODEL_CHOICE + MGMT_EVENT
+│   └── run_management_effect.R         # [3] Feature Addition: set MODEL_CHOICE + MGMT_EVENT
 │
 ├── metrics/
 │   ├── compute_metrics_and_plots.R     # [4a] MAE/RMSE/R² (pooled & split), CSV export
@@ -114,7 +113,7 @@ NEEgap/
 │   ├── VI_graphs_compact.R             # [4d] RF variable importance boxplot summaries
 │   ├── PI_threshold_plot.R             # [4e] PI sensitivity: PPFD > 400 vs > 700 scatter
 │   ├── plot_artificial_gaps.R          # [4f] Artificial gap positions on NEE time series
-│   ├── plot_real_gaps_cleaveland.R     # [4g] Real gap length distribution (Cleveland dot plot)
+│   ├── plot_real_gaps_cleaveland.R     # [4g] Real gap length distribution (Cleveland dot plot, log scale)
 │   └── timeseries_nee.R                # [4h] NEE time series + management events + scatter
 │
 ├── graphs/                             # All plot outputs (created automatically)
@@ -209,7 +208,7 @@ source("scripts/run_model.R")
 #      Edit SITE_NAME and MODEL_CHOICE in run_MDS_miniRECgap.R first
 source("scripts/run_MDS_miniRECgap.R")
 
-# 3 — Management variable ablation study
+# 3 — Management variable feature addition study
 #     Edit SITE_NAME, MODEL_CHOICE, and MGMT_EVENT in run_management_effect.R,
 #     then source once per combination.
 #     MGMT_EVENT options: "Grazing_days_since" | "Fertiliser_days_since" |
@@ -323,7 +322,7 @@ The script loads `data/data_prepared/{SITE_NAME}_cv.rds` (produced by scripts 08
 
 ---
 
-### Stage 3 — Management Ablation Study
+### Stage 3 — Management Effect Study
 
 **Script:** `scripts/run_management_effect.R`
 
@@ -338,12 +337,12 @@ MGMT_EVENT   <- "Grazing_days_since"  # see table below
 
 | `MGMT_EVENT` value | Predictor added to BASE | PI activated? |
 |---|---|---|
-| `"Grazing_days_since"` | `Grazing_days_since` | **Auto** (yes) |
+| `"Grazing_days_since"` | `Grazing_days_since` | No |
 | `"Fertiliser_days_since"` | `Fertiliser_days_since` | No |
 | `"N"` | `N` | No |
 | `"grass_height"` | `grass_height` | No |
 | `"grass_biomass"` | `grass_biomass` | No |
-| `"PI"` | *(none — BASE only)* | **Yes** — PI per gap, Grazing not in predictors |
+| `"PI"` | *(none — BASE only)* | Yes|
 
 **Delta convention:** `delta = metric(BASE + mgmt) − metric(BASE)` — negative delta for MAE/RMSE means improvement; positive for R².
 
@@ -390,17 +389,9 @@ All plots are saved as **PNG** under `graphs/`; diagnostic figures also export *
 | **MLP** | Neural Network | `keras3` / TensorFlow | 128–64–32 ReLU layers; Adam optimiser; early stopping patience = 10 on validation loss; min-max scaling of features and target; stratified 10 % validation split by season × month × day/night |
 | **XGBoost** | Gradient Boosting | `xgboost` | Early stopping on validation RMSE; boosting evaluation curves saved per gap label |
 | **miniRECgap** | Process-based | Base R | Lloyd-Taylor Reco + Thornley non-rectangular hyperbola GPP; parameters fitted per regrowth period from outside-gap observations; produces Reco and GPP directly (not post-hoc) |
-| **MDS** | Look-up table | `REddyProc` | Marginal Distribution Sampling (Wutzler et al., 2018); window ±5/10/20 days; requires a complete annual timeline; excluded from L and VL gap sizes |
+| **MDS** | Look-up table | `REddyProc` | Marginal Distribution Sampling; window ±5/10/20 days; requires a complete annual timeline; excluded from L and VL gap sizes |
 
 All model CV scripts (`RF_CV.R`, `MLP_CV.R`, `XGBoost_CV.R`, `miniRECgap_CV.R`, `MDS_CV.R`) expect `df` to be the output of scripts 08 and 09 (`{SITE}_cv.rds`). Gap construction, NA filtering, and PI computation are handled upstream and are not repeated inside the model scripts.
-
-### Reco and GPP derivation
-
-For RF, MLP, and XGBoost, Reco and GPP are derived **post-hoc** from the gap-filled NEE through flux partitioning:
-
-- **Night-time** (PPFD < 10 µmol m⁻² s⁻¹): Reco fitted by OLS to the Lloyd-Taylor temperature response; base respiration R10 estimated from nighttime training rows.
-- **Daytime**: GPP fitted by BFGS to the Thornley non-rectangular hyperbola using daytime training rows.
-- Parameters are estimated **per regrowth period** (delineated by grazing events) from observations outside each artificial gap, preserving cross-validation integrity and ensuring NEE = Reco − GPP holds at every gap row.
 
 ---
 
@@ -410,7 +401,7 @@ Each year-long dataset is partitioned into **contiguous artificial gaps** of fou
 
 | Label | Duration | Tolerance |
 |---|---|---|
-| S (Short) | ≈ 3 days (144 half-hours) | ± 10 rows |
+| S (Short) | ≈ 1 day (48 half-hours) | ± 10 rows |
 | M (Medium) | ≈ 7 days (336 half-hours) | ± 60 rows |
 | L (Long) | ≈ 14 days (672 half-hours) | ± 120 rows |
 | VL (Very Long) | ≈ 30 days (1 440 half-hours) | ± 250 rows |
@@ -435,12 +426,12 @@ Metrics are reported separately for two temporal windows per gap label:
 | Column | Description | Units |
 |---|---|---|
 | `PPFD` | Photosynthetic photon flux density | µmol m⁻² s⁻¹ |
-| `Rg` | Global shortwave radiation | W m⁻² |
+| `Rg` | Global radiation | W m⁻² |
 | `VPD` | Vapour pressure deficit | kPa |
 | `RH` | Relative humidity | % |
 | `Temp` | Air temperature | °C |
 | `rain` | Precipitation per half-hour | mm |
-| `rain_rolling_24` | 24 h trailing mean precipitation | mm |
+| `rain_rolling_24` | 24 h rolling mean precipitation | mm |
 | `hour_sin`, `hour_cos` | Hour of day — cyclical encoding | — |
 | `doy_sin`, `doy_cos` | Day of year — cyclical encoding | — |
 | `month_sin`, `month_cos` | Month of year — cyclical encoding | — |
@@ -459,10 +450,7 @@ Metrics are reported separately for two temporal windows per gap label:
 
 ### Phytomass Index (PI)
 
-Including `Grazing_days_since` in the predictor list also activates the **Phytomass Index** — a per-gap derived predictor computed by script 09 from the rolling 21-day balance of night-time and daytime NEE observations outside each artificial gap. PI ∈ [0, 1] reflects canopy regrowth state without leaking any information from inside the gap being filled. Each model script selects the matching `PI_{gap_label}` column automatically (e.g. `PI_S1` for gap `S1`).
-
-To use `Grazing_days_since` as a raw predictor *without* PI, set `MGMT_EVENT <- "Grazing_days_since"` in `run_management_effect.R` (PI is not activated for raw management predictor runs except when `Grazing_days_since` triggers auto-PI in the full managed run).  
-To use PI *without* `Grazing_days_since` in the predictor set, set `MGMT_EVENT <- "PI"` in `run_management_effect.R`.
+**Phytomass Index** — a per-gap derived predictor computed by script 09 from the rolling 21-day balance of night-time and daytime NEE observations outside each artificial gap. PI ∈ [0, 1] reflects canopy regrowth state without leaking any information from inside the gap being filled. Each model script selects the matching `PI_{gap_label}` column automatically (e.g. `PI_S1` for gap `S1`).
 
 ---
 
@@ -487,11 +475,10 @@ graphs/
 ├── metrics_csv/                             # CSVs written by compute_metrics_and_plots.R
 │   ├── gap_metrics_NEE_{SIZE}.csv           # Per-gap metrics (≤30 d / >30 d split)
 │   ├── gap_metrics_whole_NEE_{SIZE}.csv     # Per-gap metrics (whole gap, no split)
-│   ├── overall_metrics_pooled_NEE.csv       # Method I pooled metrics (all models)
+│   ├── overall_metrics_pooled_NEE.csv       # Pooled metrics across all gaps per-size (all models)
 │   └── management_effect/{SITE}/{VAR}/      # Per-variable pooled CSVs
 │       └── overall_metrics_pooled_NEE.csv
 ├── overall_metrics/NEE/                     # Line-profile plots (split + no-split)
-├── site_comparison/NEE/{SIZE}/              # Connected-dot plots (≤30 d / >30 d)
 ├── site_comparison_coloured/NEE/{SIZE}/     # Season/recovery-encoded split plots
 ├── site_comparison_whole/NEE/{SIZE}/        # Whole-gap unsplit connected-dot plots
 ├── management_effect/
@@ -525,7 +512,7 @@ graphs/
 
 5. **Gap-filling:** set `SITE_NAME <- "NEWSITE"` in `run_model.R` and run for each model and management condition.
 
-6. **Ablation study:** set `SITE_NAME <- "NEWSITE"` in `run_management_effect.R` and run for each model and management event combination.
+6. **MAnagement Effect study:** set `SITE_NAME <- "NEWSITE"` in `run_management_effect.R` and run for each model and management event combination.
 
 7. **Metrics:** add the new site to `SITES_ALL` in `compute_metrics_and_plots.R`, `graph_colour_individual_gaps.R`, `management_effect_graphs.R`, and `VI_graphs_compact.R`. Update `SITES` in `plot_artificial_gaps.R`, `plot_real_gaps_cleaveland.R`, `PI_threshold_plot.R`, and `timeseries_nee.R` as well.
 
