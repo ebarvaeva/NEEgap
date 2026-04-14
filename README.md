@@ -8,16 +8,16 @@ Developed for sites **JC1** and **JC2** (Johnstown Castle, Teagasc, Ireland), 20
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [Repository Structure](#2-repository-structure)
-3. [Data Layout](#3-data-layout)
-4. [Prerequisites](#4-prerequisites)
-5. [Quick Start](#5-quick-start)
+1. [Quick Start](#1-quick-start)
+2. [Overview](#2-overview)
+3. [Repository Structure](#3-repository-structure)
+4. [Data Layout](#4-data-layout)
+5. [Prerequisites](#5-prerequisites)
 6. [Pipeline in Detail](#6-pipeline-in-detail)
    - [Stage 0 — Quality Control](#stage-0--quality-control)
    - [Stage 1 — Data Preparation](#stage-1--data-preparation)
    - [Stage 2 — Gap-Filling Models](#stage-2--gap-filling-models)
-   - [Stage 3 — Management Ablation Study](#stage-3--management-ablation-study)
+   - [Stage 3 — Management Effect Study](#stage-3--management-effect-study)
    - [Stage 4 — Metrics and Plots](#stage-4--metrics-and-plots)
 7. [Models](#7-models)
 8. [Cross-Validation Design](#8-cross-validation-design)
@@ -27,7 +27,58 @@ Developed for sites **JC1** and **JC2** (Johnstown Castle, Teagasc, Ireland), 20
 
 ---
 
-## 1. Overview
+## 1. Quick Start
+
+Open R with the project root as the working directory (e.g. open `GapFillNEE.Rproj` in RStudio).
+
+```r
+# One-time: generate management event CSV files
+source("data_preparation/generate_management_csvs.R")
+
+# 0 — Run QC (once per site × year, with paths set inside the script)
+source("data_preparation/quality_control_nee/quality_control_nee.R")
+
+# 1a — Prepare both sites, both years → JC1.rds, JC2.rds
+source("data_preparation/01_run_data_preparation.R")
+
+# 1b — Construct artificial gap flags and masked-NEE columns → JC1_cv.rds, JC2_cv.rds
+source("data_preparation/08__artificial_gaps.R")
+
+# 1c — Compute Phytomass Index per gap label → appended to JC1_cv.rds, JC2_cv.rds
+source("data_preparation/09__phytomass_index.R")
+
+# 2a — Gap-fill with Random Forest, JC1, managed predictor set
+#      Edit SITE_NAME, MANAGEMENT_CONDITION, MODEL_CHOICE in run_model.R first
+source("scripts/run_model.R")
+
+# 2b — Gap-fill with miniRECgap or MDS
+#      Edit SITE_NAME and MODEL_CHOICE in run_MDS_miniRECgap.R first
+source("scripts/run_MDS_miniRECgap.R")
+
+# 3 — Management variable feature addition study
+#     Edit SITE_NAME, MODEL_CHOICE, and MGMT_EVENT in run_management_effect.R,
+#     then source once per combination.
+#     MGMT_EVENT options: "Grazing_days_since" | "Fertiliser_days_since" |
+#                         "N" | "grass_height" | "grass_biomass" | "PI"
+source("scripts/run_management_effect.R")
+
+# 4 — Metrics and plots
+# Run compute_metrics_and_plots.R first — it produces the CSVs used by
+# graph_colour_individual_gaps.R and management_effect_graphs.R.
+# The remaining scripts are independent and can be run in any order.
+source("metrics/compute_metrics_and_plots.R")       # must run first — produces CSVs
+source("metrics/graph_colour_individual_gaps.R")
+source("metrics/management_effect_graphs.R")
+source("metrics/VI_graphs_compact.R")
+source("metrics/PI_threshold_plot.R")
+source("metrics/plot_artificial_gaps.R")
+source("metrics/plot_real_gaps_cleaveland.R")
+source("metrics/timeseries_nee.R")
+```
+
+---
+
+## 2. Overview
 
 ```
 Raw EddyPro / Biomet / FluxNet CSVs
@@ -55,12 +106,12 @@ Raw EddyPro / Biomet / FluxNet CSVs
 **What the pipeline does:**
 
 - Fills gaps in half-hourly NEE measurements using five independent models.
-- Evaluates each model at four gap sizes (S ≈ 3 d, M ≈ 7 d, L ≈ 14 d, VL ≈ 30 d) via a leave-one-gap-out cross-validation.
+- Evaluates each model at four gap sizes (S ≈ 1 d, M ≈ 7 d, L ≈ 14 d, VL ≈ 30 d) via a leave-one-gap-out cross-validation.
 - Isolates the contribution of each management variable to accuracy using a feature-addition ablation study.
 
 ---
 
-## 2. Repository Structure
+## 3. Repository Structure
 
 ```
 NEEgap/
@@ -122,7 +173,7 @@ NEEgap/
 
 ---
 
-## 3. Data Layout
+## 4. Data Layout
 
 Data files are **not included** in this repository. Place them in the `data/` directory:
 
@@ -161,7 +212,7 @@ After this, CSVs can be edited manually for new years or sites.
 
 ---
 
-## 4. Prerequisites
+## 5. Prerequisites
 
 **R ≥ 4.2** with the following packages:
 
@@ -177,57 +228,6 @@ After this, CSVs can be edited manually for new years or sites.
 | Plotting | `patchwork` |
 
 **Python / TensorFlow** (MLP only): create a virtual environment named `r-tensorflow` with TensorFlow ≥ 2.x, then configure `reticulate` to use it. MLP can be skipped without affecting any other step.
-
----
-
-## 5. Quick Start
-
-Open R with the project root as the working directory (e.g. open `GapFillNEE.Rproj` in RStudio).
-
-```r
-# One-time: generate management event CSV files
-source("data_preparation/generate_management_csvs.R")
-
-# 0 — Run QC (once per site × year, with paths set inside the script)
-source("data_preparation/quality_control_nee/quality_control_nee.R")
-
-# 1a — Prepare both sites, both years → JC1.rds, JC2.rds
-source("data_preparation/01_run_data_preparation.R")
-
-# 1b — Construct artificial gap flags and masked-NEE columns → JC1_cv.rds, JC2_cv.rds
-source("data_preparation/08__artificial_gaps.R")
-
-# 1c — Compute Phytomass Index per gap label → appended to JC1_cv.rds, JC2_cv.rds
-source("data_preparation/09__phytomass_index.R")
-
-# 2a — Gap-fill with Random Forest, JC1, managed predictor set
-#      Edit SITE_NAME, MANAGEMENT_CONDITION, MODEL_CHOICE in run_model.R first
-source("scripts/run_model.R")
-
-# 2b — Gap-fill with miniRECgap or MDS
-#      Edit SITE_NAME and MODEL_CHOICE in run_MDS_miniRECgap.R first
-source("scripts/run_MDS_miniRECgap.R")
-
-# 3 — Management variable feature addition study
-#     Edit SITE_NAME, MODEL_CHOICE, and MGMT_EVENT in run_management_effect.R,
-#     then source once per combination.
-#     MGMT_EVENT options: "Grazing_days_since" | "Fertiliser_days_since" |
-#                         "N" | "grass_height" | "grass_biomass" | "PI"
-source("scripts/run_management_effect.R")
-
-# 4 — Metrics and plots
-# Run compute_metrics_and_plots.R first — it produces the CSVs used by
-# graph_colour_individual_gaps.R and management_effect_graphs.R.
-# The remaining scripts are independent and can be run in any order.
-source("metrics/compute_metrics_and_plots.R")       # must run first — produces CSVs
-source("metrics/graph_colour_individual_gaps.R")
-source("metrics/management_effect_graphs.R")
-source("metrics/VI_graphs_compact.R")
-source("metrics/PI_threshold_plot.R")
-source("metrics/plot_artificial_gaps.R")
-source("metrics/plot_real_gaps_cleaveland.R")
-source("metrics/timeseries_nee.R")
-```
 
 ---
 
@@ -342,7 +342,7 @@ MGMT_EVENT   <- "Grazing_days_since"  # see table below
 | `"N"` | `N` | No |
 | `"grass_height"` | `grass_height` | No |
 | `"grass_biomass"` | `grass_biomass` | No |
-| `"PI"` | *(none — BASE only)* | Yes|
+| `"PI"` | *(none — BASE only)* | Yes |
 
 **Delta convention:** `delta = metric(BASE + mgmt) − metric(BASE)` — negative delta for MAE/RMSE means improvement; positive for R².
 
@@ -498,7 +498,7 @@ graphs/
 
 ## 11. Adding a New Site
 
-1. **Place raw data** in `data/raw_data/{NEWSITE}_{YEAR}_*.csv` following the layout in [Section 3](#3-data-layout).
+1. **Place raw data** in `data/raw_data/{NEWSITE}_{YEAR}_*.csv` following the layout in [Section 4](#4-data-layout).
 
 2. **QC:** in `quality_control_nee.R`, set `site_key` to the site's row name in `nasco_site_list_wkt.csv` and update the four `*_path` variables. Run for each year.
 
@@ -512,7 +512,7 @@ graphs/
 
 5. **Gap-filling:** set `SITE_NAME <- "NEWSITE"` in `run_model.R` and run for each model and management condition.
 
-6. **MAnagement Effect study:** set `SITE_NAME <- "NEWSITE"` in `run_management_effect.R` and run for each model and management event combination.
+6. **Management Effect study:** set `SITE_NAME <- "NEWSITE"` in `run_management_effect.R` and run for each model and management event combination.
 
 7. **Metrics:** add the new site to `SITES_ALL` in `compute_metrics_and_plots.R`, `graph_colour_individual_gaps.R`, `management_effect_graphs.R`, and `VI_graphs_compact.R`. Update `SITES` in `plot_artificial_gaps.R`, `plot_real_gaps_cleaveland.R`, `PI_threshold_plot.R`, and `timeseries_nee.R` as well.
 
