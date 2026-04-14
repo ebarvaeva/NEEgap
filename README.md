@@ -139,8 +139,8 @@ NEEgap/
 │   ├── 05_nitrogen.R                   # N step function from fertiliser events
 │   ├── 06_grass_canopy.R               # grass_height, grass_biomass (interpolated)
 │   ├── 07_bind_years.R                 # Bind 2023 + 2024, validate, save final RDS
-│   ├── 08__artificial_gaps.R           # [1b] Construct CV gap flags and masked-NEE columns → JCi_cv.rds
-│   ├── 09__phytomass_index.R           # [1c] Compute PI_{gap_label} columns → appended to JCi_cv.rds
+│   ├── 08_artificial_gaps.R           # [1b] Construct CV gap flags and masked-NEE columns → JCi_cv.rds
+│   ├── 09_phytomass_index.R           # [1c] Compute PI_{gap_label} columns → appended to JCi_cv.rds
 │   ├── ManagementEvents.R              # Hard-coded JC1/JC2 management event tables
 │   ├── generate_management_csvs.R      # One-time: export event tables to CSV files
 │   └── Regrowth_period.R               # Regrowth period definition utilities
@@ -408,7 +408,7 @@ Each year-long dataset is partitioned into **contiguous artificial gaps** of fou
 
 Gaps are non-overlapping and constructed sequentially (VL → L → M → S) so that all four gap matrices coexist in the same data frame. For each gap label the model is trained on all observed rows outside that gap and predicts the gap rows — a **leave-one-gap-out (LOGO)** cross-validation.
 
-**Output prediction column naming:** `{NEE|Reco|GPP}_{S|M|L|VL}_{rf|mlp|xgb|minirec|mds}_predicted`
+**Output prediction column naming:** `{NEE}_{S|M|L|VL}_{rf|mlp|xgb|minirec|mds}_predicted`
 
 Metrics are reported separately for two temporal windows per gap label:
 
