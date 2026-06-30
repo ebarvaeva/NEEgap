@@ -1,11 +1,7 @@
-# =============================================================================
 # MLP_CV.R — MLP Cross-Validation Gap-Filling for NEE
-# =============================================================================
 #
 # WHAT THIS SCRIPT DOES
-#   Trains a Multi-Layer Perceptron (keras3 / TensorFlow) to gap-fill NEE
-#   only.  Reco and GPP are derived separately by Script 10
-#   (flux_partitioning.R), which reads the NEE predictions saved here.
+#   Trains a Multi-Layer Perceptron (keras3 / TensorFlow) to gap-fill NEE.
 #
 # PRE-REQUISITES
 #   This script expects df to be the output of Script 08 + Script 09, i.e.
@@ -14,8 +10,6 @@
 #     - Gap flag columns  VL1…VLk, L1…Lk, M1…Mk, S1…Sk  (Script 08)
 #     - Masked-NEE columns  NEE_VL1…, NEE_L1…, NEE_M1…, NEE_S1…  (Script 08)
 #     - PI columns  PI_VL1…, PI_L1…, PI_M1…, PI_S1…  (Script 09)
-#   Sections for NA filtering, gap construction, PI computation, and flux
-#   partitioning are therefore no longer needed and have been removed.
 #   The PI column for each gap label is selected automatically inside
 #   run_mlp_for_gap_size(): for gap S1 it uses PI_S1, for M3 it uses PI_M3.
 #
@@ -24,20 +18,14 @@
 #     df          — loaded from data/data_prepared/JCi_cv.rds
 #     predictors  — character vector of base predictor column names
 #     RESULTS_DIR — output directory path
-#     rds_name    — source file name (written to run_info.txt)
 #     PI_ENABLED  — logical; passed from run_model.R user settings
 #
 # OUTPUTS  (written to RESULTS_DIR)
-#   df_cv_all_predictions.rds        ← NEE predictions only; Reco/GPP added by Script 10
+#   df_cv_all_predictions.rds
 #   training_loss_curves/  — MLP_NEE_{SIZE}_{LABEL}_{loss|mae}.png
-#   progress.log | run_info.txt
-#
-# =============================================================================
 
 
-# =============================================================================
-# SECTION 1 — Reproducibility
-# =============================================================================
+# Reproducibility
 set.seed(42)
 Sys.setenv(PYTHONHASHSEED="0", CUDA_VISIBLE_DEVICES="-1",
            OMP_NUM_THREADS="1", MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1",
@@ -45,51 +33,21 @@ Sys.setenv(PYTHONHASHSEED="0", CUDA_VISIBLE_DEVICES="-1",
            TF_DETERMINISTIC_OPS="1")
 
 
-# =============================================================================
-# SECTION 2 — Progress logger
-# =============================================================================
+# Output directory (provided by run_model.R; temp-dir fallback if sourced directly)
 if (!exists("RESULTS_DIR", inherits=TRUE) || is.null(RESULTS_DIR))
   RESULTS_DIR <- file.path(tempdir(), "mlp_cv_fallback")
 dir.create(RESULTS_DIR, recursive=TRUE, showWarnings=FALSE)
-.run_log <- list()
-log_msg <- function(...) {
-  txt <- paste0("[", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "] ", paste(..., collapse=""))
-  message(txt); .run_log <<- append(.run_log, list(txt))
-  try(silent=TRUE, {writeLines(unlist(.run_log), file.path(RESULTS_DIR,"progress.log"))
-    saveRDS(.run_log, file.path(RESULTS_DIR,"progress_log.rds"))}); invisible(txt)
-}
-log_msg("MLP (NEE gap-fill) started.  RESULTS_DIR = ", RESULTS_DIR)
 
 
-# =============================================================================
-# SECTION 3 — Helper functions
-# =============================================================================
-
-# 3a  Metrics
-.vp<-function(o,p) is.finite(as.numeric(o))&is.finite(as.numeric(p))
-calc_mae  <-function(o,p){ok<-.vp(o,p); if(!any(ok)) return(NA_real_); mean(abs(as.numeric(p)[ok]-as.numeric(o)[ok]))}
-calc_rmse <-function(o,p){ok<-.vp(o,p); if(!any(ok)) return(NA_real_); sqrt(mean((as.numeric(p)[ok]-as.numeric(o)[ok])^2))}
-calc_r2   <-function(o,p){ok<-.vp(o,p); if(sum(ok)<2) return(NA_real_); ov<-as.numeric(o)[ok]; pv<-as.numeric(p)[ok]; den<-sum((ov-mean(ov))^2)*sum((pv-mean(pv))^2); if(den<=0) return(NA_real_); (sum((ov-mean(ov))*(pv-mean(pv)))^2)/den}
-
-# 3b  Season labels
+# Season labels
 timestamp_to_season<-function(x){m<-as.integer(format(x,"%m")); dplyr::case_when(m%in%c(11,12,1)~"Winter",m%in%c(2,3,4)~"Spring",m%in%c(5,6,7)~"Summer",m%in%c(8,9,10)~"Autumn",TRUE~NA_character_)}
 
 
-# =============================================================================
-# SECTION 4 — Phytomass Index flag
-# =============================================================================
-# PI_ENABLED is set by run_model.R and passed into this script via run_env.
-# When TRUE, PI_{gap_label} columns (pre-computed by Script 09) are appended
-# to the feature set for each gap: PI_S1 for gap S1, PI_M3 for gap M3, etc.
-# When FALSE, no PI column is used and the base predictor set is unchanged.
-
+# Phytomass Index flag (from run_model.R); if TRUE, the gap-specific PI_{label} column is appended per gap
 if (!exists("PI_ENABLED")) PI_ENABLED <- FALSE   # safe fallback if sourced directly
-log_msg("Phytomass Index: ", if (PI_ENABLED) "ENABLED" else "DISABLED")
 
 
-# =============================================================================
-# SECTION 5 — MLP-specific helpers (scaling, train/val split, builder)
-# =============================================================================
+# MLP-specific helpers (scaling, train/val split, builder)
 
 fit_feature_scaler <- function(df, train_rows, feature_cols) {
   mins <- vapply(feature_cols, function(c) suppressWarnings(min(as.numeric(df[[c]][train_rows]),na.rm=T)), numeric(1))
@@ -168,21 +126,12 @@ save_mlp_loss_curves <- function(history_df, gap_size_cat, gap_label) {
 }
 
 
-# =============================================================================
-# SECTION 6 — MLP cross-validation  (NEE only)
-# =============================================================================
-# For each gap label gl within gap_size_cat:
-#   - Training rows = rows where NEE_{gl} is finite (i.e. outside the gap)
-#   - If PI_ENABLED, PI_{gl} is appended to feats — the gap-specific PI
-#     from Script 09, computed from outside-gl rows only
-#   - One MLP trained per gap; predictions written back to gap rows only
+# MLP cross-validation: one model per gap (train on rows outside the gap, predict the gap rows; PI_{gap} added when PI_ENABLED)
 
 run_mlp_for_gap_size <- function(flux_data, gap_size_cat, feature_cols, val_frac=0.10) {
-  log_msg("MLP [", gap_size_cat, "]: starting.")
   gap_labels <- names(flux_data)[grepl(paste0("^",gap_size_cat,"\\d+$"),names(flux_data))]
   gap_labels <- gap_labels[order(as.integer(sub(gap_size_cat,"",gap_labels)))]
-  if (!length(gap_labels)) { log_msg("MLP [",gap_size_cat,"]: no gaps — skip."); return(flux_data) }
-  log_msg("MLP [",gap_size_cat,"]: ",length(gap_labels)," gaps.")
+  if (!length(gap_labels)) return(flux_data)
   
   pred_col             <- paste0("NEE_", gap_size_cat, "_mlp_predicted")
   flux_data[[pred_col]] <- NA_real_
@@ -196,7 +145,6 @@ run_mlp_for_gap_size <- function(flux_data, gap_size_cat, feature_cols, val_frac
     
     obs_rows <- which(is.finite(flux_data[[masked_nee]]))
     gap_rows <- which(flux_data[[gap_lbl]] %in% c(TRUE,1))
-    log_msg("MLP [",gap_size_cat,"] ",gap_lbl,": n_obs=",length(obs_rows)," n_gap=",length(gap_rows))
     if (length(obs_rows)<10 || !length(gap_rows)) next
     
     spl     <- stratified_train_val_split(flux_data, obs_rows, val_frac, seed=42L)
@@ -237,36 +185,15 @@ run_mlp_for_gap_size <- function(flux_data, gap_size_cat, feature_cols, val_frac
       as.numeric(predict(mlp, Xgap)), ts)
   }
   
-  log_msg("MLP [",gap_size_cat,"] complete — MAE = ",
-          signif(calc_mae(flux_data$NEE_orig,flux_data[[pred_col]]),3),
-          "  RMSE = ",signif(calc_rmse(flux_data$NEE_orig,flux_data[[pred_col]]),3),
-          "  R² = ",  signif(calc_r2(  flux_data$NEE_orig,flux_data[[pred_col]]),3))
   flux_data
 }
 
 
-# =============================================================================
-# SECTION 7 — Data preparation
-# =============================================================================
-# df arrives pre-filtered (no NA NEE_orig rows) and pre-built (all gap flag,
-# masked-NEE, and PI columns already present from Scripts 08–09).
-
+# Data preparation: df is pre-filtered and pre-built by Scripts 08-09
 flux_data <- df
-log_msg("Rows in pre-built CV data: ", nrow(flux_data))
-
-# Report gap structure found in the pre-built data
-for (pfx in c("VL","L","M","S")) {
-  gcols <- names(flux_data)[grepl(paste0("^", pfx, "\\d+$"), names(flux_data))]
-  if (length(gcols))
-    log_msg("Gap columns found — ", pfx, ": ", length(gcols),
-            " (", gcols[1], " … ", gcols[length(gcols)], ")")
-}
 
 
-# =============================================================================
-# SECTION 8 — Keras / TensorFlow initialisation
-# =============================================================================
-log_msg("Loading Keras / TensorFlow ...")
+# Keras / TensorFlow initialisation
 library(reticulate); use_virtualenv("r-tensorflow", required=TRUE)
 Sys.setenv(CUDA_VISIBLE_DEVICES="-1")
 library(tensorflow); library(keras3)
@@ -274,36 +201,12 @@ set.seed(42)
 import("numpy",    convert=TRUE)$random$seed(42L)
 import("tensorflow",convert=TRUE)$random$set_seed(42L)
 import("random",   convert=TRUE)$seed(42L)
-log_msg("TensorFlow ready.")
 
 
-# =============================================================================
-# SECTION 9 — Run MLP cross-validation  (NEE only)
-# =============================================================================
-log_msg("=== Running MLP cross-validation — NEE ===")
+# Run MLP cross-validation
 for (cat in c("VL","L","M","S"))
   flux_data <- run_mlp_for_gap_size(flux_data, cat, predictors)
-log_msg("All MLP NEE gap sizes complete.")
 
 
-# =============================================================================
-# SECTION 10 — Save outputs
-# =============================================================================
-# Reco and GPP are NOT derived here.  Run Script 10 (flux_partitioning.R)
-# after this script to add Reco_{SIZE}_mlp_predicted and GPP_{SIZE}_mlp_predicted
-# columns to df_cv_all_predictions.rds.
-
-dir.create(RESULTS_DIR, recursive=TRUE, showWarnings=FALSE)
+# Save outputs
 saveRDS(flux_data, file.path(RESULTS_DIR,"df_cv_all_predictions.rds"))
-log_msg("Saved: df_cv_all_predictions.rds  (NEE predictions only — run Script 10 for Reco/GPP)")
-
-writeLines(c(
-  paste("Run finished    :", as.character(Sys.time())),
-  paste("R version       :", R.version.string),
-  paste("Source RDS      :", rds_name),
-  paste("RESULTS_DIR     :", RESULTS_DIR),
-  paste("Targets         :", "NEE only — Reco/GPP via Script 10"),
-  paste("Predictors      :", paste(predictors,collapse=", "))
-), file.path(RESULTS_DIR,"run_info.txt"))
-log_msg("Saved: run_info.txt — MLP script finished.")
-# ============================= end MLP_CV.R ===================================
