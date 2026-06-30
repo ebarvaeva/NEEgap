@@ -1,88 +1,46 @@
-# =============================================================================
-# MDS (Marginal Distribution Sampling) — Cross-Validation Gap-Filling for NEE
-# =============================================================================
+# MDS_CV.R — Marginal Distribution Sampling cross-validation gap-filling for NEE
 #
-# LOGIC: MDS gap-fills NEE only. Reco and GPP are not derived here.
+# Runs REddyProc MDS once per artificial gap to gap-fill NEE only (Reco and GPP
+# are not derived here). For each gap the affected rows are blanked from NEE, MDS
+# is run on the remaining series, and the blanked rows are predicted back — an
+# out-of-sample test of gap-filling skill across four gap-size classes
+# (VL = very large, L = large, M = medium, S = small).
 #
-# INPUTS
-#   df — a pre-built JC1_cv.rds / JC2_cv.rds data frame, sourced externally.
-#        Already filtered to rows with finite NEE_orig and augmented with
-#        gap flag columns (VL1…, L1…, M1…, S1…) and masked NEE columns.
+# Inputs (provided by the run script, assumed to already exist):
+#   df          — JCi_cv.rds: observed-NEE rows, pre-built by Scripts 08-09 with
+#                 gap-flag columns (VL1…, L1…, M1…, S1…) and masked-NEE columns
+#                 (NEE_VL1…)
+#   RESULTS_DIR — output directory (already created)
 #
-# OUTPUTS  (written to RESULTS_DIR)
-#   df_cv_all_predictions.rds
-#       NEE_{S|M|L|VL}_mds_predicted
-#   progress.log | run_info.txt
-#
-# =============================================================================
+# Outputs (written to RESULTS_DIR):
+#   df_cv_all_predictions.rds — gap-filled NEE (NEE_{S|M|L|VL}_mds_predicted)
 
 
-# =============================================================================
-# SECTION 1 — Reproducibility
-# =============================================================================
+# fix the seed and pin BLAS to one thread so runs are reproducible
 set.seed(42)
 Sys.setenv(OMP_NUM_THREADS = "1", MKL_NUM_THREADS = "1", OPENBLAS_NUM_THREADS = "1")
 
-
-# =============================================================================
-# SECTION 2 — Required packages
-# =============================================================================
-needed <- c("dplyr", "tibble", "lubridate", "purrr")
-miss   <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
+# stop early with a clear message if any required package is missing
+needed <- c("dplyr", "tibble", "lubridate", "REddyProc")
+miss <- needed[!vapply(needed, requireNamespace, logical(1), quietly = TRUE)]
 if (length(miss)) stop("Install missing packages: ", paste(miss, collapse = ", "))
-if (!requireNamespace("REddyProc", quietly = TRUE))
-  stop("Package 'REddyProc' is required.  Run: install.packages('REddyProc')")
 
-
-# =============================================================================
-# SECTION 3 — Progress logger
-# =============================================================================
-if (!exists("RESULTS_DIR", inherits = TRUE) || is.null(RESULTS_DIR))
-  RESULTS_DIR <- file.path(tempdir(), "mds_cv_fallback")
-dir.create(RESULTS_DIR, recursive = TRUE, showWarnings = FALSE)
-.run_log <- list()
-log_msg <- function(...) {
-  txt <- paste0("[", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "] ", paste(..., collapse = ""))
-  message(txt); .run_log <<- append(.run_log, list(txt))
-  try(silent = TRUE, {
-    writeLines(unlist(.run_log), file.path(RESULTS_DIR, "progress.log"))
-    saveRDS(.run_log, file.path(RESULTS_DIR, "progress_log.rds"))
-  }); invisible(txt)
-}
-log_msg("MDS (NEE gap-fill only) started.  RESULTS_DIR = ", RESULTS_DIR)
-
-
-# =============================================================================
-# SECTION 4 — Data validation
-# =============================================================================
-req_cols <- c("timestamp", "NEE_orig")
+# require timestamp + NEE_orig; add VPD as NA when absent (MDS still runs)
+req_cols  <- c("timestamp", "NEE_orig")
 miss_cols <- setdiff(req_cols, names(df))
 if (length(miss_cols)) stop("Missing required columns: ", paste(miss_cols, collapse = ", "))
+if (!"VPD" %in% names(df)) df$VPD <- NA_real_
 
-if (!"VPD" %in% names(df)) {
-  log_msg("Column 'VPD' not found — creating as NA (MDS will still run).")
-  df$VPD <- NA_real_
-}
-
+# coerce timestamp to POSIXct, drop duplicates, sort
 if (!inherits(df$timestamp, "POSIXt"))
   df$timestamp <- suppressWarnings(
     lubridate::parse_date_time(df$timestamp,
                                orders = c("Ymd HMS", "Ymd HM", "Ymd", "Y/m/d HMS", "Y/m/d", "d/m/Y HMS", "d/m/Y"),
                                tz = "UTC"))
 stopifnot(!any(is.na(df$timestamp)))
+df <- df %>% dplyr::arrange(timestamp) %>% dplyr::distinct(timestamp, .keep_all = TRUE)
 
-n_dup <- sum(duplicated(df$timestamp))
-if (n_dup > 0) {
-  log_msg(n_dup, " duplicated timestamps removed.")
-  df <- df %>% dplyr::arrange(timestamp) %>% dplyr::distinct(timestamp, .keep_all = TRUE)
-}
-df <- dplyr::arrange(df, timestamp)
-log_msg("Input rows: ", nrow(df), "  (pre-filtered to finite NEE_orig by Script 08)")
-
-
-# =============================================================================
-# SECTION 5 — REddyProc interface helpers
-# =============================================================================
+# build a gap-free 30-min timeline and map df onto REddyProc's expected columns
 prepare_reddyproc_input <- function(source_df, target_col,
                                     ppfd_col = "PPFD", temp_col = "Temp", vpd_col = "VPD") {
   ts_min <- min(source_df$timestamp, na.rm = TRUE)
@@ -101,6 +59,7 @@ prepare_reddyproc_input <- function(source_df, target_col,
                   Hour = lubridate::hour(DateTime) + lubridate::minute(DateTime) / 60)
 }
 
+# run one MDS gap-fill and return its NEE predictions aligned to DateTime
 run_one_mds <- function(eddy_in) {
   proc <- REddyProc::sEddyProc$new(
     ID       = "SITE",
@@ -113,84 +72,48 @@ run_one_mds <- function(eddy_in) {
   tibble::tibble(DateTime = eddy_in$DateTime, mds_prediction = as.numeric(res[[fill_col[1]]]))
 }
 
-
-# =============================================================================
-# SECTION 6 — MDS cross-validation
-# =============================================================================
-# Two-pass design per gap label:
-#   Pass 1 (baseline): MDS on NEE_orig — fills any real NAs in the output.
-#   Pass 2 (per-gap):  MDS on NEE_{label} (NA at gap rows) — CV predictions.
-# Predictions written ONLY to gap rows.
-
+# per gap label: baseline MDS on NEE_orig fills real NAs, per-gap MDS fills the gap rows
 run_mds_for_gap_size <- function(df_cv, gap_size_cat) {
-  log_msg("MDS [", gap_size_cat, "]: starting.")
+  # gap-flag columns for this size class (S1, S2, …), ordered numerically
   gap_labels <- names(df_cv)[grepl(paste0("^", gap_size_cat, "\\d+$"), names(df_cv))]
   gap_labels <- gap_labels[order(as.integer(sub(gap_size_cat, "", gap_labels)))]
-  if (!length(gap_labels)) {
-    log_msg("MDS [", gap_size_cat, "]: no gap columns — skipping."); return(df_cv)
-  }
-  log_msg("MDS [", gap_size_cat, "]: ", length(gap_labels), " gap labels.")
-  
+  if (!length(gap_labels)) return(df_cv)
+
+  # output column that will hold this size class's predictions
   pred_col          <- paste0("NEE_", gap_size_cat, "_mds_predicted")
   df_cv[[pred_col]] <- NA_real_
-  
+
+  # baseline pass fills the genuinely missing NEE_orig rows
   baseline_preds <- tryCatch({
     eddy_base <- prepare_reddyproc_input(df_cv, target_col = "NEE_orig")
     res_base  <- run_one_mds(eddy_base)
     res_base$mds_prediction[match(df_cv$timestamp, res_base$DateTime)]
-  }, error = function(e) {
-    log_msg("MDS baseline failed: ", conditionMessage(e)); rep(NA_real_, nrow(df_cv))
-  })
+  }, error = function(e) rep(NA_real_, nrow(df_cv)))
   real_na_rows <- which(!is.finite(df_cv$NEE_orig))
   if (length(real_na_rows))
     df_cv[[pred_col]][real_na_rows] <- baseline_preds[real_na_rows]
-  
+
   for (gap_lbl in gap_labels) {
-    masked_nee <- paste0("NEE_", gap_lbl)
+    masked_nee <- paste0("NEE_", gap_lbl)   # NEE with this gap blanked out
     if (!masked_nee %in% names(df_cv)) next
     gap_rows <- which(df_cv[[gap_lbl]] %in% c(TRUE, 1))
     if (!length(gap_rows)) next
-    
+
+    # per-gap MDS predictions, kept only on the gap rows
     gap_preds <- tryCatch({
       eddy_in <- prepare_reddyproc_input(df_cv, target_col = masked_nee)
       res     <- run_one_mds(eddy_in)
       res$mds_prediction[match(df_cv$timestamp, res$DateTime)]
-    }, error = function(e) {
-      log_msg("MDS failed for ", gap_lbl, ": ", conditionMessage(e))
-      rep(NA_real_, nrow(df_cv))
-    })
-    
+    }, error = function(e) rep(NA_real_, nrow(df_cv)))
     df_cv[[pred_col]][gap_rows] <- gap_preds[gap_rows]
-    log_msg("MDS [", gap_size_cat, "] ", gap_lbl, ": filled ", length(gap_rows), " gap rows.")
   }
-  
-  log_msg("MDS [", gap_size_cat, "] complete.")
   df_cv
 }
 
-
-# =============================================================================
-# SECTION 7 — Run MDS for all gap sizes
-# =============================================================================
-log_msg("=== Running MDS cross-validation — NEE ===")
+# run every gap-size class in turn: very-large, large, medium, small
 for (cat in c("VL", "L", "M", "S"))
   df <- run_mds_for_gap_size(df, cat)
-log_msg("All MDS gap sizes complete.")
 
-
-# =============================================================================
-# SECTION 8 — Save output
-# =============================================================================
+# save the gap-filled NEE predictions
 dir.create(RESULTS_DIR, recursive = TRUE, showWarnings = FALSE)
 saveRDS(df, file.path(RESULTS_DIR, "df_cv_all_predictions.rds"))
-log_msg("Saved: df_cv_all_predictions.rds")
-writeLines(c(
-  paste("Run finished    :", as.character(Sys.time())),
-  paste("R version       :", R.version.string),
-  paste("Source RDS      :", rds_name),
-  paste("RESULTS_DIR     :", RESULTS_DIR),
-  paste("n_rows          :", nrow(df)),
-  paste("Target          :", "NEE only (MDS)")
-), file.path(RESULTS_DIR, "run_info.txt"))
-log_msg("Saved: run_info.txt — MDS script finished.")
-# ================================ end MDS_CV.R ================================
