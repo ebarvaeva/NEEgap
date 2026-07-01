@@ -48,7 +48,7 @@ MGMT_VARS <- c(
 )
 
 # Sites to run (edit to add "JC1")
-SITES <- c("JC2")
+SITES <- c("JC1", "JC2")
 
 # For each site: load its prepared data, then loop over management variables
 for (site in SITES) {
