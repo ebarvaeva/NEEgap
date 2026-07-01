@@ -1,4 +1,4 @@
-# management_effect_graphs.R — Management-predictor ablation: CSVs + % MAE-reduction heatmaps
+# management_effect_graphs.R — Management variable contribution: CSVs + % MAE-reduction heatmaps
 #
 # Quantifies how much each management predictor helps NEE gap-filling by adding it
 # one at a time on top of the meteorology-only baseline (BASE) and measuring the

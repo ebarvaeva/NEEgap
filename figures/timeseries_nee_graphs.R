@@ -1,6 +1,6 @@
 # timeseries_nee.R — JC1-vs-JC2 NEE figures for the paper (Figs 1, 2, 3)
 #
-# Standalone plotting script. Loads both sites' prepared NEE series and draws:
+# Loads both sites' prepared NEE series and draws:
 #   Fig 1 — NEE time series per site with grazing/fertiliser event lines
 #           (JC1 2020, JC1 2023-2024, JC2 2023-2024 stacked)
 #   Fig 2 — JC1-vs-JC2 NEE scatter, 2x2 facets by JC1 grazing window,

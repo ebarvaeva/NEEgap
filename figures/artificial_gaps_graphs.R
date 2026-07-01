@@ -1,6 +1,6 @@
 # plot_artificial_gaps.R — Artificial-gap positions on the NEE time series
 #
-# Standalone plotting script. Reads one reference prediction file per site and
+# Reads one reference prediction file per site and
 # marks, on the observed NEE series, the start of every artificial cross-
 # validation gap (S/M/L/VL), so the placement and spacing of the LOGO blocks
 # can be inspected. Produces one figure per site x gap-size and a stacked

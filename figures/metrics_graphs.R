@@ -1,7 +1,6 @@
 # compute_metrics_and_plots.R — Gap-filling metrics + overall-metric plots (run first)
 #
-# Stage-4 entry point for the metrics pipeline. Reads df_cv_all_predictions.rds
-# from every model result folder, computes per-gap and pooled MAE / RMSE / R2
+# Reads df_cv_all_predictions.rds from every model result folder, computes per-gap and pooled MAE / RMSE / R2
 # for NEE, writes the CSVs that the other metrics scripts consume, and draws the
 # overall-metric line plots (gap size on x, model as colour).
 #

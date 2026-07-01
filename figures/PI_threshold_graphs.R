@@ -1,6 +1,6 @@
 # PI_threshold_plot.R — PI daytime-PPFD threshold sensitivity (paper Fig 3)
 #
-# Standalone plotting script. Recomputes the Phytomass Index (PI) on the full
+# Recomputes the Phytomass Index (PI) on the full
 # observed NEE series under two daytime PPFD thresholds (>400 and >700
 # umol m-2 s-1) and draws a PI_400-vs-PI_700 scatter per site with a 1:1 line,
 # so the reader can see how little the threshold choice moves PI. Both sites
