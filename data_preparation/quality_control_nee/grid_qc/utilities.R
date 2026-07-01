@@ -1,60 +1,16 @@
-# =============================================================================
-# utilities.R  — Grid and Footprint Utility Functions
-# =============================================================================
+# utilities.R — spatial-grid and footprint helper functions
 #
-# PURPOSE
-#   A collection of spatial and matrix helper functions originally developed
-#   for the 'footprints' R package.  These utilities support the construction,
-#   manipulation, and analysis of the 2D footprint grids computed by
-#   calc_footprint_FFP_mod.R, and are sourced by quality_control_nee.R.
+# A library of helpers for building and post-processing 2-D flux footprints:
+# atmospheric-stability class, grid construction / resampling, matrix<->long
+# reshaping, cumulative-weight source-area masking, and the site helpers that read a
+# boundary polygon and compute the fraction of footprint mass falling inside it.
+# Defines functions only and saves nothing; sourced wherever these helpers are used.
 #
-# FUNCTIONS
-#   atmospheric_stability(mo_length, z, zd, zo, neutral_thr)
-#     Returns a stability class label ('stable', 'unstable', 'neutral') from
-#     the Monin-Obukhov stability parameter z/L (or (z-d)/L if z0 given).
-#
-#   as_matrix(x, ...)           -- coerce data.frame, Raster, or stars to matrix
-#   with_matrix(.x, .f, ...)    -- apply a vectorised function to a matrix,
-#                                  preserving matrix dimensions
-#   with_matrix2(.x, .y, .f)    -- two-argument version of with_matrix
-#
-#   grid_init(extent, fetch, res)
-#     Constructs a list of coordinate matrices (x, y) for a regular spatial
-#     grid of resolution res (default 1 m) with dimensions defined by either
-#     an explicit extent [xmin,xmax,ymin,ymax] or a symmetric fetch radius.
-#
-#   snap_to_grid(x, grid, coords, method)
-#     Resamples a Raster object to the coordinate system of a grid returned
-#     by grid_init(), aligned to the specified tower coordinates.
-#
-#   aoi_to_grid(aoi, coords, delta, center)
-#     Rasterises an sf area-of-interest polygon onto the grid,
-#     returning a binary 0/1 matrix (1 = inside polygon).
-#
-#   aoi_to_mask(aoi, coords, delta, center)
-#     Converts the area-of-interest to a logical mask matrix.
-#
-#   cut_grid(x, width, keep_partial, coords)
-#     Splits a grid matrix into subgrid tiles of a given width.
-#
-#   get_trim_extent(x, values) / trim_matrix(x, extent)
-#     Identify and trim border rows/columns that contain only 'values'
-#     (default 0), reducing grid memory footprint.
-#
-#   Additional utility functions for matrix-to-long-format pivoting
-#   and footprint weighting are defined later in the file.
-#
-# NOTE
-#   The devtools::load_all() call has been removed; source this file directly.
-#   Some functions depend on the 'sf', 'raster', 'stars', and 'rlang' packages.
-#
-# =============================================================================
+# Input  : none (function definitions)
+# Output : none
 
-
-# Returns 'stable', 'unstable', or 'neutral' for a given Obukhov length and
-# measurement geometry.  Neutral band is |z/L| < neutral_thr (default 0.04).
 atmospheric_stability <- function(mo_length, z, zd, zo, neutral_thr = 0.04) {
-  zm <- z - zd  # effective measurement height above displacement
+  zm <- z - zd
   if (!missing(zo)) {
     zu <- zm * (log(zm / zo) - 1 + (zo / zm))
     zl <- zu / mo_length
@@ -67,7 +23,6 @@ atmospheric_stability <- function(mo_length, z, zd, zo, neutral_thr = 0.04) {
     zl > 0 ~ "stable"
   )
 }
-
 
 #' Coerce a gridded object to a matrix
 #'
@@ -93,7 +48,6 @@ as_matrix <- function(x, ...) {
   raster::as.matrix(x, ...)
 }
 
-
 # Performs vector operations on matrices while retaining matrix dimensions
 with_matrix <- function(.x, .f, ..., .dims = dim(.x)) {
 
@@ -116,7 +70,6 @@ with_matrix2 <- function(.x, .y, .f, ..., .dims = dim(.x)) {
 
   matrix(vec, nrow = .dims[1], ncol = .dims[2])
 }
-
 
 #' Construct matrix template for calculating footprint
 #'
@@ -161,7 +114,6 @@ grid_init <- function(extent, fetch, res = 1) {
   attributes(out) <- list("names" = names(out), "fetch" = fetch, "res" = res)
   out
 }
-
 
 #' Resample a raster to a standard matrix grid
 #'
@@ -209,7 +161,6 @@ snap_to_grid <- function(x, grid, coords, method = "ngb") {
   out
 }
 
-
 aoi_to_grid <- function(aoi, coords, delta = 1, center = FALSE) {
 
   # Ensure that grid template will cover entire AOI
@@ -243,7 +194,6 @@ aoi_to_grid <- function(aoi, coords, delta = 1, center = FALSE) {
   list(x = grid_x, y = grid_y)
 }
 
-
 aoi_to_mask <- function(aoi, coords, delta = 1, center = FALSE) {
 
   # Ensure that grid template will cover entire AOI
@@ -269,7 +219,6 @@ aoi_to_mask <- function(aoi, coords, delta = 1, center = FALSE) {
 
   grid_mat
 }
-
 
 cut_grid <- function(x, width, keep_partial = TRUE, coords = NULL) {
 
@@ -340,7 +289,6 @@ cut_grid <- function(x, width, keep_partial = TRUE, coords = NULL) {
 
   # row_bins <- ggplot2::cut_number(seq(1, dim[1]), n, labels = FALSE)
   # col_bins <- ggplot2::cut_number(seq(1, dim[2]), n, labels = FALSE)
-  #browser()
   grid_bins <- outer(
     stringr::str_pad(row_bins, 2, pad = "0"),
     stringr::str_pad(col_bins, 2, pad = "0"),
@@ -359,7 +307,6 @@ cut_grid <- function(x, width, keep_partial = TRUE, coords = NULL) {
   grid_lab
 }
 
-
 get_trim_extent <- function(x, values = 0) {
 
   # Only support for one trim value at the moment
@@ -370,12 +317,10 @@ get_trim_extent <- function(x, values = 0) {
   c(min(keep_y), max(keep_y), min(keep_x), max(keep_x))
 }
 
-
 trim_matrix <- function(x, extent = get_trim_extent(x)) {
 
   x[extent[1]:extent[2], extent[3]:extent[4]]
 }
-
 
 #' Pivot matrix data from wide to long
 #'
@@ -398,7 +343,6 @@ pivot_matrix <- function(x) {
     tidyr::pivot_longer(-y, names_to = "x", values_to = "z") %>%
     dplyr::mutate(dplyr::across(is.character, as.numeric))
 }
-
 
 #' Write a matrix to a delimited file
 #'
@@ -432,7 +376,6 @@ write_matrix <- function(x, path, trunc = 0, compress = TRUE) {
   # Write to file
   readr::write_delim(tbl, file_path, col_names = FALSE)
 }
-
 
 #' Read whitespace-separated columns into a matrix
 #'
@@ -469,7 +412,6 @@ read_matrix <- function(file, trunc = 0) {
   data_mat
 }
 
-
 #' Read grid coordinates from two .txt files
 #'
 #' probably get rid of this - pretty unnecessary
@@ -491,13 +433,11 @@ read_grid <- function(path, names = c("x", "y")) {
     rlang::set_names(names)
 }
 
-
 pluck_cell <- function(x, grid, coords) {
 
   cell_loc <- which(grid$x == coords[1] & grid$y == coords[2])
   x[cell_loc]
 }
-
 
 #' Rasterize a footprint matrix
 #'
@@ -527,7 +467,6 @@ fp_rasterize <- function(x, grid, coords, crs) {
 
 }
 
-
 rotate_grid <- function(grid, dir) {
   fpd <- sqrt(grid$y^2 + grid$x^2)
   fpa <- atan2(grid$x, grid$y) * 180 / pi - dir
@@ -536,8 +475,6 @@ rotate_grid <- function(grid, dir) {
   out$y <- -1 * sin(fpa * pi/180) * fpd
   out
 }
-
-
 
 accumulate_weights <- function(x, max = 1, zero_as_max = FALSE) {
 
@@ -562,7 +499,6 @@ accumulate_weights <- function(x, max = 1, zero_as_max = FALSE) {
 
   accum_source
 }
-
 
 #' Mask footprint to its analytical source area
 #'
@@ -612,7 +548,6 @@ mask_source_area <- function(x, p = 0.85, mask_value = NA) {
   out
 }
 
-
 #' Convert footprint to a polygon representing a given source area
 #'
 #' @param x The footprint as a numeric matrix or RasterLayer.
@@ -644,7 +579,6 @@ source_area_polygon <- function(x, p = 0.85) {
     )
   }
 }
-
 
 # ----------------------------------------------------------------------------------------------------------
 # Function to extract footprint boundary and tower coordinates for a given site
@@ -702,7 +636,6 @@ process_footprint_data <- function(site, polygons_df) {
   )
 }
 
-
 #------------------------------#
 #  PBLH Calculation & QC       #
 #------------------------------#
@@ -727,16 +660,9 @@ process_dataset <- function(df) {
     ungroup() %>%
     filter(!is.na(zm), !is.na(MO_LENGTH_fluxnet), !is.na(roughness_length_meta), !is.na(pblh), !is.na(V_SIGMA_fluxnet), !is.na(u_star), !is.na(wind_dir))
   
-  # Apply QC filters
-  #qc_df <- processed_df %>% 
-  #filter(u_star > 0.1, pblh > 10)
-  
-  #cat("QC filtered", dataset_name, "has", nrow(qc_df), "rows (", 
-  #round(nrow(qc_df)/nrow(processed_df)*100, 1), "% retained).\n")
   
   return(processed_df)
 }
-
 
 #------------------------------------------#
 #  Define compute_footprint_ratio function #
@@ -768,7 +694,6 @@ compute_footprint_ratio <- function(footprint_result, boundary_poly) {
   ratio <- ifelse(total_flux > 0, inside_flux / total_flux, 0.0)
   return(ratio)
 }
-
 
 # Use calc_footprint_FFP_mod, translated from the Kljun FFP Python
 add_footprint_ratio <- function(data, boundary_poly, tower_x, tower_y) {
