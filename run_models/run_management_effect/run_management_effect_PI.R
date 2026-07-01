@@ -38,7 +38,7 @@ BASE_PREDICTORS_LINEAR <- c(
   "Winter", "Spring", "Summer", "Autumn"
 )
 
-SITES  <- c("JC2")                    # sites to run (edit to add "JC1")
+SITES  <- c("JC1", "JC2")                    # sites to run 
 MODELS <- c("RF", "XGBoost", "MLP")   # run in this order
 
 # For each site: load data, verify PI columns, then run every model with PI

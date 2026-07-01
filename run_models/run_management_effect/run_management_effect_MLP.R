@@ -47,8 +47,8 @@ MGMT_VARS <- c(
   "grass_biomass"
 )
 
-# Sites to run (edit to add "JC1")
-SITES <- c("JC2")
+# Sites to run
+SITES <- c("JC1", "JC2")
 
 # For each site: load its prepared data, then loop over management variables
 for (site in SITES) {
