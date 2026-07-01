@@ -1,6 +1,6 @@
 # plot_real_gaps_cleaveland.R — Real-gap length distribution (paper Fig 4)
 #
-# Standalone plotting script. Reconstructs the real (measurement) gaps in each
+# Reconstructs the real (measurement) gaps in each
 # site's NEE series, bins their lengths into 1-day bins (0-1 d ... 29-30 d, plus
 # a >30 d catch-all), and draws a Cleveland dot plot of gap counts for JC1 vs
 # JC2 on a log x-axis.
