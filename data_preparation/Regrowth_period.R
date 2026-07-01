@@ -1,283 +1,292 @@
-# =============================================================================
-# Regrowth_period.R — Regrowth Period and Animal/Nitrogen Dummies (SKELETON)
-# =============================================================================
+# Regrowth_period.R — regrowth-period, grazing-group, cow and N annotations
 #
-# PURPOSE
-#   Uses the management event tables from ManagementEvents.R to add contextual
-#   columns to the gap-filling data frame:
+# Site-level utility (run once per site). Derives grazing "groups" and the
+# regrowth window after each group from the management event tables, then adds
+# per-group dummies, the cow count during grazing, and the N step function to a
+# gap-filling data frame, and saves the annotated frame back to disk.
 #
-#   grazing_group_{i}   — 1 while the i-th grazing bout is in progress
-#   growth_{i}          — 1 during the regrowth interval after grazing bout i
-#   pre_grazing         — 1 before the first grazing event of the record
-#   post_grazing        — 1 after the last grazing event of the record
-#   cows                — number of animals present (0 outside grazing windows)
-#   N                   — kg N ha⁻¹ applied at the most recent fertiliser event
-#                         (step function, 0 before first application)
+# NOTE: the source() and readRDS()/saveRDS() paths below use an older repository
+# layout ("03. Data_Preparation/...", "01. Data_Main/...") and will not resolve
+# against the current structure — update them to your paths before running.
 #
-# HOW TO FILL IN YOUR DATA
-#   1. Fill in cow_windows with the start date, end date, and animal count for
-#      each grazing period.  One row per continuous occupancy window.
-#   2. Fill in N_windows with the date and N amount for each mineral fertiliser
-#      application.  Slurry events should be excluded (see comment in table).
-#   3. Update the three "CHANGE SITE" lines in Section 2 to point to the correct
-#      site identifier, RDS file, and event tables from ManagementEvents.R.
-#
-# PLACEHOLDER CONVENTION
-#   "YYYY-MM-DD"  — replace with an actual date string
-#   0L            — replace with the actual animal count (integer)
-#   "DD/MM/YYYY"  — replace with a date in day/month/year format
-#   0.0           — replace with the actual N amount (kg N ha⁻¹)
-#
-# SOURCED AFTER
-#   ManagementEvents.R  (must be sourced first; provides the *_events_* tables)
-#
-# =============================================================================
+# To switch site, edit the SITE-LEVEL block (site_id, rds_name, events_*,
+# cow_windows, N_windows) from the jc1_* selections to the jc2_* ones.
 
 library(dplyr)
 library(tidyr)
 library(lubridate)
 library(stringr)
-library(here)
 
-# ManagementEvents.R must already be sourced (or sourced here):
-source(here::here("data_preparation", "ManagementEvents.R"))
+# hard-coded management event tables (jc1_events_*, jc2_events_*)
+source(here::here("03. Data_Preparation/01d. ManagementEvents.R"))
 
-
-# =============================================================================
-# SECTION 1 — Site-level data tables  (FILL IN YOUR DATA HERE)
-# =============================================================================
-
-# ---------------------------------------------------------------------------
-# cow_windows
-# ---------------------------------------------------------------------------
-# One row per continuous animal-occupancy window.  Windows should align with
-# the grazing events in ManagementEvents.R — use the same start and end dates.
-#
-# Columns:
-#   start_date  — "YYYY-MM-DD"  first day animals were present
-#   end_date    — "YYYY-MM-DD"  last day animals were present (inclusive)
-#   cow_number  — integer       number of animals in this window
-
-cow_windows_site1 <- tibble::tribble(
-  ~start_date,    ~end_date,      ~cow_number,
-  # "YYYY-MM-DD",  "YYYY-MM-DD",  0L,   # <-- replace with your first grazing window
-  # "YYYY-MM-DD",  "YYYY-MM-DD",  0L,   # <-- add one row per grazing bout
-  "YYYY-MM-DD",  "YYYY-MM-DD",   0L    # placeholder — remove and replace
+# site-level cow-count windows and N schedules (JC1 and JC2 both provided)
+cow_windows_jc1 <- tibble::tribble(
+  ~start_date,   ~end_date,     ~cow_number,
+  # ---- 2020 ----
+  "2020-02-04",  "2020-02-07",  30L,   # ramp 27 -> 32; start value
+  "2020-02-10",  "2020-02-10",  37L,
+  "2020-03-03",  "2020-03-07",  21L,
+  "2020-03-09",  "2020-03-09",  21L,
+  "2020-03-12",  "2020-03-13",  21L,
+  "2020-03-16",  "2020-03-17",  21L,
+  "2020-03-19",  "2020-03-22",  22L,   # tied with 24; start value
+  "2020-04-10",  "2020-04-18",  29L,
+  "2020-05-03",  "2020-05-09",  29L,
+  "2020-05-25",  "2020-06-02",  29L,
+  "2020-06-17",  "2020-06-25",  27L,
+  "2020-07-09",  "2020-07-18",  27L,
+  "2020-08-01",  "2020-08-12",  22L,
+  "2020-09-01",  "2020-09-21",  19L,   # tied with 20; start value
+  "2020-10-21",  "2020-10-30",  29L,
+  "2020-11-02",  "2020-11-07",  31L,
+  # ---- 2023 ----
+  "2023-02-19",  "2023-02-28",  12L,
+  "2023-03-01",  "2023-03-11",  11L,
+  "2023-04-10",  "2023-04-27",  17L,
+  "2023-05-11",  "2023-05-13",  19L,
+  "2023-05-16",  "2023-05-21",  19L,
+  "2023-05-29",  "2023-05-31",  19L,
+  "2023-06-09",  "2023-06-12",  19L,
+  "2023-06-19",  "2023-06-30",  19L,
+  "2023-07-09",  "2023-07-14",  19L,
+  "2023-08-16",  "2023-08-19",  29L,
+  "2023-08-22",  "2023-09-08",  14L,
+  "2023-10-16",  "2023-10-16",  77L,
+  # ---- 2024 ----
+  "2024-02-27",  "2024-02-27",  18L,
+  "2024-02-29",  "2024-02-29",  18L,
+  "2024-03-03",  "2024-03-12",  18L,
+  "2024-04-16",  "2024-04-30",  18L,
+  "2024-05-01",  "2024-05-01",  14L,
+  "2024-05-06",  "2024-05-08",  14L,
+  "2024-05-10",  "2024-05-10",  14L,
+  "2024-05-17",  "2024-05-28",  21L,
+  "2024-06-09",  "2024-06-27",  21L,
+  "2024-07-23",  "2024-08-09",  11L
 )
 
-cow_windows_site2 <- tibble::tribble(
-  ~start_date,    ~end_date,      ~cow_number,
-  "YYYY-MM-DD",  "YYYY-MM-DD",   0L    # placeholder — remove and replace
+N_windows_jc1 <- tibble::tribble(
+  ~fert_date,    ~N_kg_ha,
+  # ---- 2020 (CAN only) ----
+  "02/04/2020",   50,
+  "11/05/2020",   40,
+  "03/06/2020",   27,
+  "29/06/2020",   20,
+  "14/08/2020",   27,
+  "14/09/2020",   27,
+  # ---- 2023 ----
+  "20/02/2023",   18.5,
+  # "19/05/2023" Slurry excluded on purpose
+  # ---- 2024 ----
+  "02/04/2024",   30.4,
+  "07/05/2024",   23,
+  "29/05/2024",   17,
+  "20/06/2024",   10,
+  "06/08/2024",   10
+  # "22/08/2024" Slurry excluded on purpose
 )
 
-# ---------------------------------------------------------------------------
-# N_windows
-# ---------------------------------------------------------------------------
-# One row per mineral fertiliser application.
-# IMPORTANT: slurry events must be excluded (uncertain N content).
-# If a date appears in ManagementEvents.R as "Slurry", do NOT list it here.
-#
-# Columns:
-#   fert_date  — "DD/MM/YYYY"  date of application (day/month/year format)
-#   N_kg_ha    — numeric       kg N ha⁻¹ applied
-
-N_windows_site1 <- tibble::tribble(
-  ~fert_date,     ~N_kg_ha,
-  # "DD/MM/YYYY",  0.0,     # <-- replace with your first fertiliser event
-  # "DD/MM/YYYY",  0.0,     # <-- add one row per mineral application
-  # "DD/MM/YYYY"  # Slurry — excluded on purpose (do not include)
-  "DD/MM/YYYY",   0.0      # placeholder — remove and replace
+cow_windows_jc2 <- tibble::tribble(
+  ~start_date, ~end_date, ~cow_number,
+  "2023-03-21", "2023-03-24", 43L,
+  "2023-04-24", "2023-04-25", 43L,
+  "2023-05-21", "2023-05-24", 42L,
+  "2023-06-21", "2023-06-25", 42L,
+  "2023-07-21", "2023-07-22", 84L,
+  "2023-08-17", "2023-08-21", 74L,
+  "2023-09-23", "2023-09-23", 97L,
+  "2023-09-25", "2023-09-26", 97L,
+  "2023-09-28", "2023-09-29", 97L,
+  "2023-10-03", "2023-10-04", 97L,
+  "2024-02-07", "2024-02-07", 88L,
+  "2024-02-12", "2024-02-13", 88L,
+  "2024-04-15", "2024-04-18", 44L,
+  "2024-05-22", "2024-05-28", 42L,
+  "2024-06-20", "2024-06-25", 42L,
+  "2024-07-26", "2024-07-30", 41L
 )
 
-N_windows_site2 <- tibble::tribble(
-  ~fert_date,     ~N_kg_ha,
-  # "DD/MM/YYYY"  # Slurry — excluded on purpose
-  "DD/MM/YYYY",   0.0      # placeholder — remove and replace
+N_windows_jc2 <- tibble::tribble(
+  ~fert_date,   ~N_kg_ha,
+  "20/02/2023",  30,
+  "04/04/2023",  35,
+  "26/04/2023",  32,
+  "22/05/2023",  30,
+  "20/06/2023",  30,
+  "12/07/2023",  27,
+  "24/08/2023",  27,
+  "08/09/2023",  21,
+  "02/04/2024",  38,
+  # "19/04/2024" Slurry excluded on purpose
+  "07/05/2024",  30.4,
+  "29/05/2024",  25,
+  "19/06/2024",  28,
+  "10/07/2024",  20,
+  "06/08/2024",  25
 )
+# choose the site here (swap the jc1_* selections for jc2_* to run JC2)
+site_id     <- "JC1"
+rds_name    <- "JC1_2023_2024_df.rds"
+events_2023 <- jc1_events_2023
+events_2024 <- jc1_events_2024
+cow_windows <- cow_windows_jc1
+N_windows   <- N_windows_jc1
 
-
-# =============================================================================
-# SECTION 2 — Site selection  (CHANGE THESE THREE LINES PER SITE)
-# =============================================================================
-# Set site_id, the RDS file to augment, and which event and data tables to use.
-# Run this script once per site (or wrap in a loop over SITES).
-
-site_id     <- "SITE1"                 # <-- CHANGE SITE identifier
-rds_name    <- "SITE1_2023_2024.rds"   # <-- CHANGE RDS file name
-
-events_2023 <- site1_events_2023       # <-- CHANGE to matching events table from ManagementEvents.R
-events_2024 <- site1_events_2024       # <-- CHANGE
-cow_windows <- cow_windows_site1       # <-- CHANGE
-N_windows   <- N_windows_site1         # <-- CHANGE
-
-
-# =============================================================================
-# SECTION 3 — Build grazing groups  (DO NOT EDIT)
-# =============================================================================
-# Groups consecutive grazing events that are separated by fewer than 10 days
-# into a single "grazing bout".  Each bout gets a grazing_group index.
-# The interval between bouts is the "growth" (regrowth) period.
-
-grazing_events <- dplyr::bind_rows(events_2023, events_2024) %>%
-  dplyr::filter(stringr::str_detect(event, "^Grazing")) %>%
-  dplyr::mutate(
-    date_dt  = as.POSIXct(date, tz = "UTC"),
+# 1) grazing groups: bind both years and cluster events into groups
+#    separated by gaps of more than 10 days
+grazing_events <- bind_rows(
+  events_2023,
+  events_2024
+) %>%
+  filter(str_detect(event, "^Grazing")) %>%
+  mutate(
+    date_dt = as.POSIXct(date, tz = "UTC"),
     start_dt = date_dt +
-      lubridate::hm(dplyr::if_else(start_time == "24:00", "00:00", start_time)) +
-      lubridate::days(dplyr::if_else(start_time == "24:00", 1, 0)),
+      hm(if_else(start_time == "24:00", "00:00", start_time)) +
+      days(if_else(start_time == "24:00", 1, 0)),
     end_dt = date_dt +
-      lubridate::hm(dplyr::if_else(end_time == "24:00", "00:00", end_time)) +
-      lubridate::days(dplyr::if_else(end_time == "24:00", 1, 0))
+      hm(if_else(end_time == "24:00", "00:00", end_time)) +
+      days(if_else(end_time == "24:00", 1, 0))
   ) %>%
-  dplyr::arrange(start_dt) %>%
-  dplyr::mutate(
+  arrange(start_dt) %>%
+  mutate(
     grazing_group = cumsum(
-      dplyr::if_else(
-        is.na(dplyr::lag(start_dt)) |
-          as.numeric(difftime(start_dt, dplyr::lag(start_dt), units = "days")) > 10,
+      if_else(
+        is.na(lag(start_dt)) |
+          as.numeric(difftime(start_dt, lag(start_dt), units = "days")) > 10,
         1L, 0L
       )
     )
   )
 
 grazing_groups <- grazing_events %>%
-  dplyr::group_by(grazing_group) %>%
-  dplyr::summarise(
+  group_by(grazing_group) %>%
+  summarise(
     group_start    = min(start_dt),
     last_event_end = max(end_dt),
     .groups = "drop"
   ) %>%
-  dplyr::arrange(group_start) %>%
-  dplyr::mutate(group_end = dplyr::coalesce(dplyr::lead(group_start), last_event_end))
+  arrange(group_start) %>%
+  mutate(
+    group_end = coalesce(lead(group_start), last_event_end)
+  )
 
-
-# =============================================================================
-# SECTION 4 — Load data frame and add dummy columns  (DO NOT EDIT)
-# =============================================================================
-# Reads the prepared RDS for the selected site and adds all dummy columns.
-# The RDS must already contain: timestamp, Grazing, Fertiliser (from scripts 03-04).
-
-df <- readRDS(here::here("data", "data_prepared", site_id, rds_name))
+# 2) read the gap-filling data frame and add group dummies, cows and N
+df <- readRDS(here::here("01. Data_Main/Data_GapFilling", site_id, rds_name))
 
 tz_df <- attr(df$timestamp, "tzone")
 if (is.null(tz_df) || tz_df == "") tz_df <- "UTC"
 
 grazing_groups_tz <- grazing_groups %>%
-  dplyr::mutate(
+  mutate(
     grazing_group  = as.integer(grazing_group),
-    group_start    = lubridate::with_tz(group_start,    tz_df),
-    last_event_end = lubridate::with_tz(last_event_end, tz_df)
+    group_start    = with_tz(group_start,    tz_df),
+    last_event_end = with_tz(last_event_end, tz_df)
   ) %>%
-  dplyr::arrange(group_start)
+  arrange(group_start)
 
 first_start <- grazing_groups_tz$group_start[1]
 last_end    <- grazing_groups_tz$last_event_end[nrow(grazing_groups_tz)]
 
 df <- df %>%
-  dplyr::mutate(
+  mutate(
     pre_grazing  = as.integer(timestamp < first_start),
     post_grazing = as.integer(timestamp >= last_end),
-    .row_id      = dplyr::row_number()
+    .row_id = row_number()
   )
 
-# --- grazing_group_{i}: 1 while bout i is in progress ----------------------
+# grazing_group_i dummy: 1 within [group_start, last_event_end)
 grazing_group_dummies <- df %>%
-  dplyr::select(.row_id, timestamp) %>%
-  tidyr::crossing(
-    grazing_groups_tz %>% dplyr::select(grazing_group, group_start, last_event_end)
-  ) %>%
-  dplyr::mutate(
+  select(.row_id, timestamp) %>%
+  crossing(grazing_groups_tz %>% select(grazing_group, group_start, last_event_end)) %>%
+  mutate(
     val = as.integer(timestamp >= group_start & timestamp < last_event_end),
     var = paste0("grazing_group_", grazing_group)
   ) %>%
-  dplyr::select(.row_id, var, val) %>%
-  tidyr::pivot_wider(names_from = var, values_from = val, values_fill = 0)
+  select(.row_id, var, val) %>%
+  pivot_wider(names_from = var, values_from = val, values_fill = 0)
 
-# --- growth_{i}: 1 during regrowth interval after bout i ------------------
+# growth_i dummy: 1 within [last_event_end_i, next group_start)
 growth_def <- grazing_groups_tz %>%
-  dplyr::transmute(
+  transmute(
     grazing_group,
     growth_start = last_event_end,
-    growth_end   = dplyr::lead(group_start)
+    growth_end   = lead(group_start)
   ) %>%
-  dplyr::mutate(growth_end = dplyr::coalesce(growth_end, growth_start))
+  mutate(growth_end = coalesce(growth_end, growth_start))
 
 growth_dummies <- df %>%
-  dplyr::select(.row_id, timestamp) %>%
-  tidyr::crossing(growth_def) %>%
-  dplyr::mutate(
+  select(.row_id, timestamp) %>%
+  crossing(growth_def) %>%
+  mutate(
     val = as.integer(timestamp >= growth_start & timestamp < growth_end),
     var = paste0("growth_", grazing_group)
   ) %>%
-  dplyr::select(.row_id, var, val) %>%
-  tidyr::pivot_wider(names_from = var, values_from = val, values_fill = 0)
+  select(.row_id, var, val) %>%
+  pivot_wider(names_from = var, values_from = val, values_fill = 0)
 
 df <- df %>%
-  dplyr::left_join(grazing_group_dummies, by = ".row_id") %>%
-  dplyr::left_join(growth_dummies,        by = ".row_id")
+  left_join(grazing_group_dummies, by = ".row_id") %>%
+  left_join(growth_dummies,        by = ".row_id")
 
-# --- cows: animal count during active grazing windows ---------------------
+# cow count: value active only where Grazing == 1
 cow_windows2 <- cow_windows %>%
-  dplyr::mutate(
-    start_date = lubridate::ymd(start_date),
-    end_date   = lubridate::ymd(end_date),
+  mutate(
+    start_date = ymd(start_date),
+    end_date   = ymd(end_date),
     start_dt   = as.POSIXct(start_date, tz = tz_df),
-    end_dt     = as.POSIXct(end_date + lubridate::days(1), tz = tz_df)
+    end_dt     = as.POSIXct(end_date + days(1), tz = tz_df)
   )
 
 df <- df %>%
-  dplyr::left_join(
+  left_join(
     df %>%
-      dplyr::select(.row_id, timestamp, Grazing) %>%
-      tidyr::crossing(cow_windows2 %>% dplyr::select(start_dt, end_dt, cow_number)) %>%
-      dplyr::mutate(hit = Grazing == 1 & timestamp >= start_dt & timestamp < end_dt) %>%
-      dplyr::group_by(.row_id) %>%
-      dplyr::summarise(
-        cows = dplyr::if_else(any(hit), first(cow_number[hit]), 0L),
+      select(.row_id, timestamp, Grazing) %>%
+      crossing(cow_windows2 %>% select(start_dt, end_dt, cow_number)) %>%
+      mutate(hit = Grazing == 1 & timestamp >= start_dt & timestamp < end_dt) %>%
+      group_by(.row_id) %>%
+      summarise(
+        cows = if_else(any(hit), first(cow_number[hit]), 0L),
         .groups = "drop"
       ),
     by = ".row_id"
   )
 
-# --- N: step function from mineral fertiliser applications ----------------
+# N: step function that changes at each fertilisation event
+
 N_windows2 <- N_windows %>%
-  dplyr::mutate(
-    fert_date = lubridate::dmy(stringr::str_replace_all(fert_date, "\\.", "/"))
+  mutate(
+    fert_date = str_replace_all(fert_date, "\\.", "/"),
+    fert_date = dmy(fert_date)
   )
 
-# Pin the N step to the first observed half-hour where Fertiliser == 1 on
-# each fertiliser date (fallback to midnight if the dummy is absent).
+# use the *observed* first half-hour where Fertiliser==1 on each fertilisation date (fallback to midnight)
 fert_starts <- df %>%
-  dplyr::filter(Fertiliser == 1) %>%
-  dplyr::mutate(fert_date = as.Date(timestamp)) %>%
-  dplyr::group_by(fert_date) %>%
-  dplyr::summarise(start_dt_obs = min(timestamp), .groups = "drop")
+  filter(Fertiliser == 1) %>%
+  mutate(fert_date = as.Date(timestamp)) %>%
+  group_by(fert_date) %>%
+  summarise(start_dt_obs = min(timestamp), .groups = "drop")
 
 fert_schedule <- N_windows2 %>%
-  dplyr::left_join(fert_starts, by = "fert_date") %>%
-  dplyr::mutate(
-    start_dt = dplyr::coalesce(start_dt_obs, as.POSIXct(fert_date, tz = tz_df))
+  left_join(fert_starts, by = "fert_date") %>%
+  mutate(
+    start_dt = coalesce(start_dt_obs, as.POSIXct(fert_date, tz = tz_df))
   ) %>%
-  dplyr::arrange(start_dt)
+  arrange(start_dt)
 
 n_starts <- fert_schedule$start_dt
 n_vals   <- fert_schedule$N_kg_ha
 
 df <- df %>%
-  dplyr::mutate(
-    .n_idx  = findInterval(timestamp, n_starts),
-    .n_idx2 = dplyr::if_else(.n_idx == 0L, 1L, .n_idx),
-    N       = dplyr::if_else(.n_idx == 0L, 0, as.numeric(n_vals[.n_idx2]))
+  mutate(
+    .n_idx  = findInterval(timestamp, n_starts),      # 0 before first start
+    .n_idx2 = if_else(.n_idx == 0L, 1L, .n_idx),      # safe for indexing
+    N = if_else(.n_idx == 0L, 0, as.numeric(n_vals[.n_idx2]))
   ) %>%
-  dplyr::select(-.n_idx, -.n_idx2)
+  select(-.n_idx, -.n_idx2)
 
 
-# =============================================================================
-# SECTION 5 — Save  (DO NOT EDIT)
-# =============================================================================
-
-out_path <- here::here("data", "data_prepared", site_id, rds_name)
+# save the annotated data frame back to the same path
+out_path <- here::here("01. Data_Main/Data_GapFilling", site_id, rds_name)
 saveRDS(df, out_path)
-message("Saved: ", out_path)
-
-# ====================== end Regrowth_period.R ================================
