@@ -1,23 +1,20 @@
-# =============================================================================
-# PI DAYTIME PPFD THRESHOLD SENSITIVITY — PPFD > 400 vs PPFD > 700
+# PI_threshold_plot.R — PI daytime-PPFD threshold sensitivity (paper Fig 3)
 #
-# PURPOSE
-#   Evaluates how sensitive the Photosynthetic Index (PI) is to the choice
-#   of daytime PPFD threshold. PI is computed on the full observed NEE_orig
-#   series (no gap masking) under two thresholds: PPFD > 400 and PPFD > 700
-#   µmol m-2 s-1. A scatterplot of PI_400 vs PI_700 is produced for each
-#   site, with a 1:1 reference line. Points above the line indicate that
-#   the looser threshold (> 400) yields a higher PI estimate.
-#   Both sites are shown side by side with a single shared legend.
-#   Points are coloured by season (Winter, Spring, Summer, Autumn).
+# Standalone plotting script. Recomputes the Phytomass Index (PI) on the full
+# observed NEE series under two daytime PPFD thresholds (>400 and >700
+# umol m-2 s-1) and draws a PI_400-vs-PI_700 scatter per site with a 1:1 line,
+# so the reader can see how little the threshold choice moves PI. Both sites
+# share one legend; points are coloured by season.
 #
-# INPUT
-#   data/data_prepared/JC1_cv.rds
-#   data/data_prepared/JC2_cv.rds
+# Inputs (in data/data_prepared/):
+#   JC1_cv.rds, JC2_cv.rds
+#   required columns: timestamp, NEE_orig, PPFD, Winter, Spring, Summer, Autumn
 #
-# OUTPUT
+# Output:
 #   graphs/PI/threshold_comparison_JC1_JC2.png
-# =============================================================================
+#
+# To adapt: add a site by calling build_pi_plot("<SITE>_cv.rds", "<SITE>") and
+# placing it in the patchwork layout below.
 
 library(here)
 library(dplyr)
@@ -27,7 +24,8 @@ library(ggplot2)
 library(zoo)
 library(patchwork)
 
-# ---- Helper: compute PI on whole NEE_orig series ----------------------------
+# compute_pi_global(): PI on the full NEE series — 21-day centred rolling mean of
+# (night NEE - day NEE), scaled to [0,1]; day/night set by PPFD thresholds.
 compute_pi_global <- function(df, night_ppfd = 1, day_ppfd = 400,
                               window_days = 21L) {
   
@@ -70,7 +68,7 @@ compute_pi_global <- function(df, night_ppfd = 1, day_ppfd = 400,
   PN[match(cd, dt_full$date)]
 }
 
-# ---- Season colours ---------------------------------------------------------
+# Season -> colour lookup.
 SEASON_COLOURS <- c(
   Winter = "#4477AA",   # blue
   Spring = "#228B22",   # green
@@ -78,7 +76,7 @@ SEASON_COLOURS <- c(
   Autumn = "#8B4513"    # brown
 )
 
-# ---- Helper: derive season label from dummy columns -------------------------
+# get_season(): collapse the four season dummy columns into one label.
 get_season <- function(df) {
   dplyr::case_when(
     df$Winter == 1 ~ "Winter",
@@ -89,7 +87,7 @@ get_season <- function(df) {
   )
 }
 
-# ---- Helper: build scatterplot for one site (legend kept for extraction) ----
+# build_pi_plot(): load one site, compute PI at both thresholds, return the scatter.
 build_pi_plot <- function(site_file, site_label) {
   
   df <- readRDS(here("data/data_prepared", site_file)) |>
@@ -113,17 +111,20 @@ build_pi_plot <- function(site_file, site_label) {
     labs(x      = "PI (PPFD > 700)",
          y      = "PI (PPFD > 400)",
          colour = "Season",
-         title  = site_label) +                         # bold via plot.title
-    theme_bw(base_size = 12) +
+         title  = site_label) +
+    theme_bw(base_size = 15) +
     theme(panel.grid.minor = element_blank(),
           legend.position  = "bottom",
+          legend.text      = element_text(size = 14),   
+          legend.title     = element_text(size = 14),   
           plot.title       = element_text(face = "bold", hjust = 0.5))
 }
 
-# ---- Build both plots, combine with patchwork -------------------------------
+# One scatter per site.
 p_jc1 <- build_pi_plot("JC1_cv.rds", "JC1")
 p_jc2 <- build_pi_plot("JC2_cv.rds", "JC2")
 
+# Side-by-side with a single shared legend spanning the bottom.
 combined <- (p_jc1 + p_jc2 + guide_area()) +
   plot_layout(
     design  = "AB\nCC",          # A and B side by side, C spans full width below
@@ -131,14 +132,9 @@ combined <- (p_jc1 + p_jc2 + guide_area()) +
     heights = c(10, 1)           # tall plots, thin legend row
   )
 
-# ---- Save -------------------------------------------------------------------
+# Save.
 out_dir <- here("graphs", "PI")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 out_path <- file.path(out_dir, "threshold_comparison_JC1_JC2.png")
 ggsave(out_path, combined, width = 12, height = 6.5, dpi = 220, bg = "white")
-message("Saved: ", out_path)
-
-# =============================================================================
-# end PI_threshold_comparison.R
-# =============================================================================

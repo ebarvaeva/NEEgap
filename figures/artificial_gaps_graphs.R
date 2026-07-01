@@ -1,26 +1,22 @@
-# =============================================================================
-# plot_artificial_gaps.R — Artificial Gap Positions on NEE Time Series
-# =============================================================================
+# plot_artificial_gaps.R — Artificial-gap positions on the NEE time series
 #
-# Saves:
+# Standalone plotting script. Reads one reference prediction file per site and
+# marks, on the observed NEE series, the start of every artificial cross-
+# validation gap (S/M/L/VL), so the placement and spacing of the LOGO blocks
+# can be inspected. Produces one figure per site x gap-size and a stacked
+# JC1-over-JC2 comparison per gap-size.
+#
+# Input (per site):
+#   results/{SITE}/managed/RF/df_cv_all_predictions.rds
+#     required columns: timestamp, NEE_orig, and gap-flag columns
+#     S1..Sn, M1..Mn, L1..Ln, VL1..VLn  (0/1: 1 = row belongs to that gap)
+#
+# Outputs:
 #   graphs/artificial_gaps/{SITE}/gap_positions_{SITE}_{SIZE}.{png,pdf}
-#     — one file per site × gap-size (S, M, L, VL)
-#
 #   graphs/artificial_gaps/comparison/gap_positions_comparison_{SIZE}.{png,pdf}
-#     — one file per gap-size: JC1 panel on top, JC2 panel below
 #
-# Input:  results/{SITE}/managed/RF/df_cv_all_predictions.rds
-#           columns: timestamp, NEE_orig, S1..Sn, M1..Mn, L1..Ln, VL1..VLn
-#           (binary 0/1: 1 = observation belongs to that gap)
-#
-# HOW TO RUN
-#   source("scripts/plot_artificial_gaps.R")
-# =============================================================================
-
-
-# =============================================================================
-# SECTION 1 — Settings
-# =============================================================================
+# To adapt: add sites to SITES; each needs a df_cv_all_predictions.rds under
+# results/{SITE}/managed/RF/.
 
 SITES     <- c("JC1", "JC2")
 GAP_SIZES <- c("S", "M", "L", "VL")
@@ -32,23 +28,18 @@ GAP_LABELS <- c(S  = "Small (1-day)",
 
 NEE_LIM <- c(-40, 40)
 
-
-# =============================================================================
-# SECTION 2 — Packages & helpers
-# =============================================================================
-
 suppressPackageStartupMessages({
   library(here); library(dplyr); library(purrr)
   library(ggplot2); library(lubridate); library(patchwork)
 })
 
+# save_fig(): write one plot as both PNG and PDF into dir.
 save_fig <- function(p, name, dir, w = 18, h = 7) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
   ggsave(file.path(dir, paste0(name, ".png")), p,
          width = w, height = h, dpi = 300, bg = "white")
   ggsave(file.path(dir, paste0(name, ".pdf")), p,
          width = w, height = h)
-  message("  Saved: ", file.path(dir, name))
 }
 
 base_theme <- theme_bw(base_size = 14) +
@@ -60,6 +51,7 @@ base_theme <- theme_bw(base_size = 14) +
     legend.position  = "none"
   )
 
+# x_date_scale(): monthly ticks from Jan of the first year to the last timestamp.
 x_date_scale <- function(data) {
   scale_x_datetime(
     date_breaks = "1 month",
@@ -76,12 +68,7 @@ x_date_scale <- function(data) {
   )
 }
 
-
-# =============================================================================
-# SECTION 3 — Gap-start extractor
-# =============================================================================
-
-# For prefix "S": finds S1, S2, ..., returns first timestamp == 1 per column
+# gap_starts(): for a prefix (e.g. "S") return the first timestamp of each gap column.
 gap_starts <- function(df, prefix) {
   cols <- grep(paste0("^", prefix, "[0-9]+$"), names(df), value = TRUE)
   cols <- cols[order(as.integer(sub(prefix, "", cols)))]
@@ -93,15 +80,10 @@ gap_starts <- function(df, prefix) {
   })
 }
 
-
-# =============================================================================
-# SECTION 4 — Single-panel builder  (one site x one size)
-# =============================================================================
-
+# build_panel(): NEE scatter for one site x gap-size with a vline at each gap start.
 build_panel <- function(df, site, size, show_x = TRUE) {
   starts <- gap_starts(df, size)
   n_gaps <- nrow(starts)
-  message("    ", site, " / ", size, ": ", n_gaps, " gaps")
   
   p <- ggplot(df %>% filter(!is.na(NEE_orig)),
               aes(x = timestamp, y = NEE_orig)) +
@@ -128,29 +110,18 @@ build_panel <- function(df, site, size, show_x = TRUE) {
   p
 }
 
-
-# =============================================================================
-# SECTION 5 — Load data for both sites
-# =============================================================================
-
+# Load one reference prediction file per site (missing sites become NULL).
 df_list <- map(SITES, function(s) {
   path <- here::here("results", s, "managed", "RF",
                      "df_cv_all_predictions.rds")
   if (!file.exists(path)) {
-    message("Not found: ", path, " — skipping ", s)
     return(NULL)
   }
   readRDS(path) %>%
     mutate(timestamp = as.POSIXct(timestamp, tz = "UTC"))
 }) %>% set_names(SITES)
 
-
-# =============================================================================
-# SECTION 6 — Individual plots  (one file per site x size)
-# =============================================================================
-
-message("\n── Individual plots ──")
-
+# Individual plots: one file per site x gap-size.
 walk(SITES, function(s) {
   if (is.null(df_list[[s]])) return(invisible())
   out_dir <- here::here("graphs", "artificial_gaps", s)
@@ -163,13 +134,7 @@ walk(SITES, function(s) {
   })
 })
 
-
-# =============================================================================
-# SECTION 7 — Comparison plots  (JC1 top / JC2 bottom, one file per size)
-# =============================================================================
-
-message("\n── Comparison plots ──")
-
+# Comparison plots: JC1 on top, JC2 below, one file per gap-size.
 comp_dir <- here::here("graphs", "artificial_gaps", "comparison")
 
 walk(GAP_SIZES, function(size) {
@@ -182,18 +147,10 @@ walk(GAP_SIZES, function(size) {
   
   if (length(panels) == 0) return(invisible())
   
-  p_comp <- wrap_plots(panels, ncol = 1) +
-    plot_annotation(
-      title = paste0("Artificial gap positions — ", GAP_LABELS[size]),
-      theme = theme(plot.title = element_text(face = "bold",
-                                              size = 15, hjust = 0))
-    )
+  p_comp <- wrap_plots(panels, ncol = 1) 
   
   save_fig(p_comp,
            paste0("gap_positions_comparison_", size),
            comp_dir,
-           w = 18, h = 10)
+           w = 14, h = 7.5)
 })
-
-message("\nDone.")
-# ========================= end plot_artificial_gaps.R =========================

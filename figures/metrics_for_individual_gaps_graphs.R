@@ -1,64 +1,44 @@
-# =============================================================================
-# SITE COMPARISON PLOTS — Season & Recovery Encoded
-# =============================================================================
+# graph_colour_individual_gaps.R — Per-gap MAE/RMSE/R² plots, season & grazing encoded
 #
-# Reads CSVs produced by compute_metrics_and_plots.R — no recomputation:
-#   gap_metrics_NEE_{gap_size}.csv        — per-gap dots (≤30d / >30d split)
-#   gap_metrics_whole_NEE_{gap_size}.csv  — per-gap dots (whole gap, no split)
-#   overall_metrics_pooled_NEE.csv        — black diamond aggregate line
-#                                           (Method I pooled, one row per
-#                                            site × management × model × gap_size)
+# Reads the per-gap and pooled metric CSVs written by compute_metrics_and_plots.R
+# (no recomputation) plus one reference df_cv_all_predictions.rds per site to recover
+# each gap's dominant season and post-grazing recovery fraction. Draws two plot
+# families across the four site × management panels: (A) split plots with ≤30 d / >30 d
+# facet rows, and (B) whole-gap plots with no split. Line colour = dominant season,
+# point shape = grazing-recovery fraction, black ◆ line = pooled (Method I) metric.
 #
-# Then reads one reference df_cv_all_predictions.rds per site to extract
-# per-gap season and grazing-recovery metadata (shape / colour encoding).
+# Required input files (under graphs/metrics_csv/, from compute_metrics_and_plots.R):
+#   gap_metrics_NEE_{S,M,L,VL}.csv        — per-gap points, ≤30 d / >30 d split
+#   gap_metrics_whole_NEE_{S,M,L,VL}.csv  — per-gap points, whole gap (no split)
+#   overall_metrics_pooled_NEE.csv        — pooled aggregate (black ◆ line)
+#   one df_cv_all_predictions.rds per site — season (Spring/Summer/Autumn/Winter)
+#                                            and Grazing_days_since metadata
 #
-# LINE COLOUR — dominant season of the gap
-#   Spring (green), Summer (orange), Autumn (brown), Winter (blue),
-#   Transitional (grey) when no season > 50 % of gap half-hours.
+# Outputs (PNG + multi-page PDF):
+#   graphs/site_comparison_coloured/NEE/{S,M,L,VL}/  — split plots
+#   graphs/site_comparison_whole/NEE/{S,M,L,VL}/     — whole-gap plots
 #
-# DOT SHAPE — fraction of gap half-hours within 30 d of last grazing
-#   Circle (●) >= 80 %  |  Triangle (▲) 50–79 %  |  Square (■) < 50 %
-#
-# Black ◆ aggregate line = Method I pooled metric from overall_metrics_pooled_NEE.csv
-#
-# TWO PLOT FAMILIES:
-#   (A) Split plots   — facet rows: ≤30d / >30d since grazing
-#                       OUTPUT: graphs/site_comparison_coloured/NEE/{GAP_SIZE}/
-#   (B) Whole-gap plots — no row split; one panel row per column
-#                         OUTPUT: graphs/site_comparison_whole/NEE/{GAP_SIZE}/
-#
-# =============================================================================
+# To adapt: change SITES_ALL / GAP_SIZES / TARGET_VARS, or the recovery thresholds
+# (SPLIT_DAYS days, GRAZ_HIGH / GRAZ_MID fractions).
 
 
-# =============================================================================
-# SECTION 1 — Settings
-# =============================================================================
-
+# Repository roots for reading metrics and writing graphs
 RESULTS_ROOT <- here::here("results")
 GRAPHS_ROOT  <- here::here("graphs")
 
+# Post-grazing split (days) and the fraction cut-offs for the recovery shape groups
 SPLIT_DAYS <- 30
 GRAZ_HIGH  <- 0.80
 GRAZ_MID   <- 0.50
 
+# Target flux, gap-size classes, sites, and the fixed panel-column order
 TARGET_VARS <- c("NEE")
 GAP_SIZES   <- c("S", "M", "L", "VL")
 SITES_ALL   <- c("JC1", "JC2")
 
 COL_LABEL_LEVELS <- c("JC1 Unmanaged","JC1 Managed","JC2 Unmanaged","JC2 Managed")
 
-MODEL_CATALOG <- tibble::tribble(
-  ~model_key,  ~model_label,  ~management,
-  "rf",        "RF",          "managed",
-  "mlp",       "MLP",         "managed",
-  "xgb",       "XGBoost",     "managed",
-  "rf",        "RF",          "unmanaged",
-  "mlp",       "MLP",         "unmanaged",
-  "xgb",       "XGBoost",     "unmanaged",
-  "minirec",   "miniRECgap",  NA_character_,
-  "mds",       "MDS",         NA_character_
-)
-
+# Resolve the df_cv_all_predictions.rds path for a given site / model / management
 rds_path_for_model <- function(site, model_key, management) {
   if (model_key %in% c("minirec","mds")) {
     folder <- switch(model_key, minirec = "miniRECgap", mds = "MDS")
@@ -70,17 +50,16 @@ rds_path_for_model <- function(site, model_key, management) {
 }
 
 
-# =============================================================================
-# SECTION 2 — Libraries
-# =============================================================================
-
+# Libraries
 suppressPackageStartupMessages({
   library(here); library(dplyr); library(tibble); library(tidyr)
   library(purrr); library(stringr); library(readr); library(ggplot2)
 })
 
+# Create a (possibly nested) output directory if it does not exist
 make_dir <- function(...) dir.create(file.path(...), recursive = TRUE, showWarnings = FALSE)
 
+# Axis labels per metric and facet-row labels for the ≤30 d / >30 d windows
 metric_ylab <- c(
   mae  = "MAE (\u03bcmol m\u207b\u00b2 s\u207b\u00b9)",
   rmse = "RMSE (\u03bcmol m\u207b\u00b2 s\u207b\u00b9)",
@@ -88,6 +67,7 @@ metric_ylab <- c(
 )
 window_labels <- c(le30 = "\u226430 d since grazing", gt30 = ">30 d since grazing")
 
+# Season colours and recovery-fraction point shapes
 SEASON_COLOURS <- c(
   Spring       = "#4DAF4A",
   Summer       = "#FF7F00",
@@ -101,6 +81,7 @@ RECOVERY_SHAPES <- c(
   "Low (<50%)"   = 22
 )
 
+# Shared plot theme
 base_theme <- theme_bw(base_size = 15) +
   theme(
     panel.grid.minor  = element_blank(),
@@ -112,6 +93,7 @@ base_theme <- theme_bw(base_size = 15) +
     panel.spacing     = unit(1, "lines")
   )
 
+# Which models appear in a panel: managed drops the benchmarks; MDS only at S/M
 mods_for <- function(mgmt, gap_cat) {
   if (mgmt == "managed")         return(c("RF","MLP","XGBoost"))
   if (gap_cat %in% c("VL","L")) return(c("RF","MLP","XGBoost","miniRECgap"))
@@ -119,20 +101,16 @@ mods_for <- function(mgmt, gap_cat) {
 }
 
 
-# =============================================================================
-# SECTION 3 — Load CSVs from compute_metrics_and_plots.R
-# =============================================================================
-
-message("Reading gap metrics CSVs ...")
+# Locate the metrics CSV folder produced by compute_metrics_and_plots.R
 csv_dir <- file.path(GRAPHS_ROOT, "metrics_csv")
 if (!dir.exists(csv_dir))
   stop("metrics_csv folder not found. Run compute_metrics_and_plots.R first.\nExpected: ", csv_dir)
 
-# ---- Per-gap dot values — split (≤30d / >30d) ----
+# Per-gap dot values with the ≤30 d / >30 d split; MDS is dropped for L/VL
 all_gap_metrics <- map_dfr(TARGET_VARS, function(tv) {
   map_dfr(GAP_SIZES, function(gs) {
     p <- file.path(csv_dir, paste0("gap_metrics_", tv, "_", gs, ".csv"))
-    if (!file.exists(p)) { message("  Missing: ", p); return(tibble()) }
+    if (!file.exists(p)) { return(tibble()) }
     read_csv(p, show_col_types = FALSE)
   })
 }) %>%
@@ -143,13 +121,11 @@ all_gap_metrics <- map_dfr(TARGET_VARS, function(tv) {
   ) %>%
   filter(!(model == "MDS" & gap_size %in% c("L","VL")))
 
-message("  Loaded ", nrow(all_gap_metrics), " per-gap split metric rows.")
-
-# ---- Per-gap dot values — whole gap (no split) ----
+# Per-gap dot values for the whole gap (no window split)
 whole_gap_metrics <- map_dfr(TARGET_VARS, function(tv) {
   map_dfr(GAP_SIZES, function(gs) {
     p <- file.path(csv_dir, paste0("gap_metrics_whole_", tv, "_", gs, ".csv"))
-    if (!file.exists(p)) { message("  Missing: ", p); return(tibble()) }
+    if (!file.exists(p)) { return(tibble()) }
     read_csv(p, show_col_types = FALSE)
   })
 }) %>%
@@ -160,12 +136,10 @@ whole_gap_metrics <- map_dfr(TARGET_VARS, function(tv) {
   ) %>%
   filter(!(model == "MDS" & gap_size %in% c("L","VL")))
 
-message("  Loaded ", nrow(whole_gap_metrics), " per-gap whole-gap metric rows.")
-
-# ---- Pooled aggregate for black diamond line ----
+# Pooled aggregate that becomes the black diamond line; columns prefixed agg_
 agg_metrics <- map_dfr(TARGET_VARS, function(tv) {
   p <- file.path(csv_dir, paste0("overall_metrics_pooled_", tv, ".csv"))
-  if (!file.exists(p)) { message("  Missing: ", p); return(tibble()) }
+  if (!file.exists(p)) { return(tibble()) }
   read_csv(p, show_col_types = FALSE)
 }) %>%
   rename(
@@ -186,17 +160,11 @@ agg_metrics <- map_dfr(TARGET_VARS, function(tv) {
   ) %>%
   filter(!(model == "MDS" & gap_size %in% c("L","VL")))
 
-message("  Loaded ", nrow(agg_metrics), " pooled aggregate rows (black diamond line).")
 
-
-# =============================================================================
-# SECTION 4 — Extract gap metadata from one reference RDS per site
-# =============================================================================
-
-message("Extracting gap metadata (season / grazing recovery) ...")
-
+# Pull per-gap season / grazing-recovery metadata from one reference RDS per site
 extract_gap_meta_for_site <- function(site) {
-  
+
+  # Prefer RF managed, then RF/MLP unmanaged, then miniRECgap; take the first present
   candidates <- c(
     rds_path_for_model(site, "rf",      "managed"),
     rds_path_for_model(site, "rf",      "unmanaged"),
@@ -205,35 +173,31 @@ extract_gap_meta_for_site <- function(site) {
   )
   path <- candidates[file.exists(candidates)][1]
   if (is.na(path)) {
-    message("  No RDS found for site ", site, " — gap metadata unavailable.")
     return(tibble())
   }
-  message("  Using reference RDS for ", site, ": ", basename(dirname(path)))
-  
+
   preds <- tryCatch(readRDS(path), error = function(e) {
-    message("  Failed: ", path, " — ", conditionMessage(e)); NULL
+    NULL
   })
   if (is.null(preds)) return(tibble())
-  
+
+  # Gap-flag columns are named like S1, M3, L2, VL4
   flag_cols_all <- names(preds)[grepl("^(S|M|L|VL)\\d+$", names(preds))]
   if (!length(flag_cols_all)) {
-    message("  No gap flag columns in: ", path); return(tibble())
+    return(tibble())
   }
-  
+
   has_season  <- all(c("Spring","Summer","Autumn","Winter") %in% names(preds))
   has_grazing <- "Grazing_days_since" %in% names(preds)
-  
-  if (!has_season)
-    message("  Season columns absent — dominant_season = Transitional")
-  if (!has_grazing)
-    message("  Grazing_days_since absent — recovery_group = Low (<50%)")
-  
+
+  # One metadata row per gap column
   map_dfr(flag_cols_all, function(fc) {
     gap_rows <- which(preds[[fc]] %in% c(TRUE, 1L))
     if (!length(gap_rows)) return(NULL)
-    
+
     sub <- preds[gap_rows, ]
-    
+
+    # Dominant season = the one covering >50% of the gap's half-hours, else Transitional
     if (has_season) {
       props <- c(
         Spring = mean(sub$Spring == 1, na.rm = TRUE),
@@ -244,7 +208,8 @@ extract_gap_meta_for_site <- function(site) {
       dom <- if (max(props, na.rm = TRUE) > 0.5) names(which.max(props))
       else "Transitional"
     } else { dom <- "Transitional" }
-    
+
+    # Recovery group from the fraction of gap half-hours within SPLIT_DAYS of grazing
     if (has_grazing) {
       gd  <- as.numeric(sub$Grazing_days_since)
       pct <- mean(is.finite(gd) & gd <= SPLIT_DAYS, na.rm = TRUE)
@@ -254,16 +219,17 @@ extract_gap_meta_for_site <- function(site) {
       pct >= GRAZ_MID  ~ "Mid (50-79%)",
       TRUE             ~ "Low (<50%)"
     )
-    
+
     gs_cat  <- str_extract(fc, "^[A-Z]+")
     gap_num <- as.integer(str_extract(fc, "\\d+$"))
-    
+
     tibble(site = site, gap_size = gs_cat,
            gap_id = paste0(gs_cat, gap_num),
            dominant_season = dom, recovery_group = rec)
   })
 }
 
+# Metadata for both sites, with factor levels fixed for consistent colour/shape order
 gap_meta <- map_dfr(SITES_ALL, extract_gap_meta_for_site) %>%
   mutate(
     gap_size        = factor(gap_size, levels = GAP_SIZES),
@@ -273,18 +239,12 @@ gap_meta <- map_dfr(SITES_ALL, extract_gap_meta_for_site) %>%
                              levels = c("High (>=80%)","Mid (50-79%)","Low (<50%)"))
   )
 
-message("  Metadata rows: ", nrow(gap_meta),
-        " (", n_distinct(gap_meta$gap_id), " unique gap IDs per site)")
-
 if (nrow(gap_meta) == 0)
   stop("No gap metadata extracted. Check that df_cv_all_predictions.rds files ",
        "contain gap flag columns and season/grazing columns.")
 
 
-# =============================================================================
-# SECTION 5 — Join metadata to both metric tables
-# =============================================================================
-
+# Attach the season / recovery metadata to a metric table, filling missing as defaults
 attach_meta <- function(df) {
   df %>%
     left_join(gap_meta %>% select(site, gap_size, gap_id,
@@ -303,14 +263,8 @@ attach_meta <- function(df) {
 all_gap_metrics   <- attach_meta(all_gap_metrics)
 whole_gap_metrics <- attach_meta(whole_gap_metrics)
 
-message("  Join complete. Split rows: ", nrow(all_gap_metrics),
-        "  Whole-gap rows: ", nrow(whole_gap_metrics))
 
-
-# =============================================================================
-# SECTION 6 — Model order helper
-# =============================================================================
-
+# Order models along x by the JC1-unmanaged ≤30 d reference metric (asc, or desc for R²)
 model_order_global <- function(tv, gap_cat, metric) {
   ref_col <- paste0("agg_", metric, "_le30")
   agg_metrics %>%
@@ -322,28 +276,26 @@ model_order_global <- function(tv, gap_cat, metric) {
 }
 
 
-# =============================================================================
-# SECTION 7A — Plot function: split (≤30d / >30d rows)
-# =============================================================================
-
+# Build a split plot with ≤30 d / >30 d facet rows for one target/gap/metric
 make_split_plot <- function(tv, gap_cat, metric,
                             add_title = FALSE, title_str = "") {
   value_le <- paste0(metric, "_le30")
   value_gt <- paste0(metric, "_gt30")
   agg_le   <- paste0("agg_", metric, "_le30")
   agg_gt   <- paste0("agg_", metric, "_gt30")
-  
+
   ord      <- model_order_global(tv, gap_cat, metric)
   all_mods <- unique(c(mods_for("unmanaged", gap_cat), mods_for("managed", gap_cat)))
   ord_full <- c(ord, setdiff(all_mods, ord))
-  
+
   col_specs <- list(
     list(site = "JC1", mgmt = "unmanaged"),
     list(site = "JC1", mgmt = "managed"),
     list(site = "JC2", mgmt = "unmanaged"),
     list(site = "JC2", mgmt = "managed")
   )
-  
+
+  # Per-gap points: long over the two windows, one block per panel column
   d_indiv <- map_dfr(col_specs, function(spec) {
     mods <- mods_for(spec$mgmt, gap_cat)
     all_gap_metrics %>%
@@ -360,7 +312,8 @@ make_split_plot <- function(tv, gap_cat, metric,
       col_label = factor(col_label, levels = COL_LABEL_LEVELS),
       model     = factor(model, levels = ord_full)
     )
-  
+
+  # Matching pooled aggregate for the black diamond line
   d_agg <- map_dfr(col_specs, function(spec) {
     mods <- mods_for(spec$mgmt, gap_cat)
     agg_metrics %>%
@@ -376,29 +329,27 @@ make_split_plot <- function(tv, gap_cat, metric,
       col_label = factor(col_label, levels = COL_LABEL_LEVELS),
       model     = factor(model, levels = ord_full)
     )
-  
+
   if (!nrow(d_indiv)) return(NULL)
   .build_plot(d_indiv, d_agg, metric, "window", COL_LABEL_LEVELS, add_title, title_str)
 }
 
 
-# =============================================================================
-# SECTION 7B — Plot function: whole gap (no 30d split)
-# =============================================================================
-
+# Build a whole-gap plot (no window split) for one target/gap/metric
 make_whole_plot <- function(tv, gap_cat, metric,
                             add_title = FALSE, title_str = "") {
   agg_col <- paste0("agg_", metric, "_all")
-  
+
   ord_full <- c("RF", "XGBoost", "MLP", "miniRECgap", "MDS")
-  
+
   col_specs <- list(
     list(site = "JC1", mgmt = "unmanaged"),
     list(site = "JC1", mgmt = "managed"),
     list(site = "JC2", mgmt = "unmanaged"),
     list(site = "JC2", mgmt = "managed")
   )
-  
+
+  # Per-gap points, one block per panel column
   d_indiv <- map_dfr(col_specs, function(spec) {
     mods <- mods_for(spec$mgmt, gap_cat)
     whole_gap_metrics %>%
@@ -413,7 +364,8 @@ make_whole_plot <- function(tv, gap_cat, metric,
       col_label = factor(col_label, levels = COL_LABEL_LEVELS),
       model     = factor(model, levels = ord_full)
     )
-  
+
+  # Matching pooled aggregate for the black diamond line
   d_agg <- map_dfr(col_specs, function(spec) {
     mods <- mods_for(spec$mgmt, gap_cat)
     agg_metrics %>%
@@ -427,19 +379,16 @@ make_whole_plot <- function(tv, gap_cat, metric,
       col_label = factor(col_label, levels = COL_LABEL_LEVELS),
       model     = factor(model, levels = ord_full)
     )
-  
+
   if (!nrow(d_indiv)) return(NULL)
   .build_plot(d_indiv, d_agg, metric, NULL, COL_LABEL_LEVELS, add_title, title_str)
 }
 
 
-# =============================================================================
-# SECTION 7C — Shared plot builder
-# =============================================================================
-
+# Assemble the ggplot shared by both families; facet_row_var = NULL means no split
 .build_plot <- function(d_indiv, d_agg, metric, facet_row_var,
                         col_levels, add_title, title_str) {
-  
+
   p <- ggplot(d_indiv, aes(x = model, y = value)) +
     geom_line(aes(group = gap_id, colour = dominant_season),
               linewidth = 0.45, alpha = 0.65) +
@@ -479,7 +428,7 @@ make_whole_plot <- function(tv, gap_cat, metric,
       ),
       shape = guide_legend(title.position = "top", nrow = 1)
     )
-  
+
   # space = "free_x" gives each column panel its own x-axis —
   # managed panels only show RF/MLP/XGBoost, miniRECgap is absent
   if (!is.null(facet_row_var)) {
@@ -489,7 +438,8 @@ make_whole_plot <- function(tv, gap_cat, metric,
     p <- p + facet_grid(. ~ col_label,
                         scales = "free", space = "free_x")
   }
-  
+
+  # R² gets 0.1 tick steps clamped to the data range; MAE/RMSE get integer 0.5 steps
   y_vals <- c(d_indiv$value, d_agg$agg_value)
   y_vals <- y_vals[is.finite(y_vals)]
   if (length(y_vals)) {
@@ -512,27 +462,22 @@ make_whole_plot <- function(tv, gap_cat, metric,
 }
 
 
-# =============================================================================
-# SECTION 8 — Generate plots
-# =============================================================================
-
-message("\nGenerating plots ...")
-
+# Loop over targets and gap sizes, writing PNGs and one multi-page PDF per family
 for (tv in TARGET_VARS) {
   for (gap_cat in GAP_SIZES) {
-    
-    # ---- (A) Split plots (≤30d / >30d) --------------------------------------
+
+    # (A) Split plots (≤30 d / >30 d): one PNG per metric
     out_dir_split <- file.path(GRAPHS_ROOT, "site_comparison_coloured", tv, gap_cat)
     make_dir(out_dir_split)
-    
+
     for (metric in c("mae","rmse","r2")) {
       p <- make_split_plot(tv, gap_cat, metric, add_title = FALSE)
       if (is.null(p)) next
       ggsave(file.path(out_dir_split, paste0(toupper(metric), "_", gap_cat, ".png")),
              p, width = 16, height = 10, dpi = 220, bg = "white")
-      message("  Saved (split): ", toupper(metric), "_", gap_cat, ".png")
     }
-    
+
+    # Split plots collected into a titled multi-page PDF
     pdf(file.path(out_dir_split, paste0("comparison_", gap_cat, "_", tv, ".pdf")),
         width = 16, height = 10, onefile = TRUE)
     for (metric in c("mae","rmse","r2")) {
@@ -543,20 +488,19 @@ for (tv in TARGET_VARS) {
       if (!is.null(p)) print(p)
     }
     dev.off()
-    message("  Saved PDF (split): comparison_", gap_cat, "_", tv, ".pdf")
-    
-    # ---- (B) Whole-gap plots (no split) -------------------------------------
+
+    # (B) Whole-gap plots (no split): one PNG per metric
     out_dir_whole <- file.path(GRAPHS_ROOT, "site_comparison_whole", tv, gap_cat)
     make_dir(out_dir_whole)
-    
+
     for (metric in c("mae","rmse","r2")) {
       p <- make_whole_plot(tv, gap_cat, metric, add_title = FALSE)
       if (is.null(p)) next
       ggsave(file.path(out_dir_whole, paste0(toupper(metric), "_", gap_cat, ".png")),
              p, width = 16, height = 6, dpi = 220, bg = "white")
-      message("  Saved (whole): ", toupper(metric), "_", gap_cat, ".png")
     }
-    
+
+    # Whole-gap plots collected into a titled multi-page PDF
     pdf(file.path(out_dir_whole, paste0("comparison_whole_", gap_cat, "_", tv, ".pdf")),
         width = 16, height = 6, onefile = TRUE)
     for (metric in c("mae","rmse","r2")) {
@@ -567,10 +511,5 @@ for (tv in TARGET_VARS) {
       if (!is.null(p)) print(p)
     }
     dev.off()
-    message("  Saved PDF (whole): comparison_whole_", gap_cat, "_", tv, ".pdf")
   }
 }
-
-message("\n=== Done.")
-message("Split plots : ", file.path(GRAPHS_ROOT, "site_comparison_coloured"))
-message("Whole plots : ", file.path(GRAPHS_ROOT, "site_comparison_whole"))
