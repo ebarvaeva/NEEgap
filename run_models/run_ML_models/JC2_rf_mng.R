@@ -47,7 +47,7 @@ FEATURE_SET <- c(
   # --- Binary flag ---
   "night",
   # --- Management-specific (remove for unmanaged sites) ---
-  "Grazing_days_since",  # activates the Phytomass Index (PI)
+  "Grazing_days_since", 
   "Fertiliser_days_since",
   "grass_height",
   "grass_biomass"
