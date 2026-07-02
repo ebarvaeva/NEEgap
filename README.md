@@ -146,4 +146,4 @@ data/                                          (not in the repo)
 install.packages(c("here","tidyverse","lubridate","zoo","hms","readxl","glue","rlang","scales","patchwork","sf","ranger","xgboost","REddyProc","reticulate","tensorflow","keras3"))
 ```
 
-The MLP scripts additionally need a working Python/TensorFlow environment behind `reticulate`; skip them to avoid it — no other step depends on the MLP.
+The MLP scripts additionally need a working Python/TensorFlow environment behind `reticulate`.
