@@ -1,6 +1,6 @@
 # NEEgap
 
-Code for the paper **"Incorporating Management and Canopy Information into Machine-Learning Gap-Filling of Eddy-Covariance Net Ecosystem Exchange in Irish Grasslands"** (Barvaeva, Parnell, Murphy, Domijan).
+Code for the study **"Incorporating Management and Canopy Information into Machine-Learning Gap-Filling of Eddy-Covariance Net Ecosystem Exchange in Irish Grasslands"** (E.Barvaeva, A.Parnell, R.Murphy, K.Domijan).
 
 It gap-fills half-hourly **NEE** (net ecosystem exchange of CO₂) at two rotationally grazed dairy-grassland eddy-covariance towers at Johnstown Castle — **JC1** (2020, 2023, 2024) and **JC2** (2023, 2024) — and tests whether adding **management and canopy predictors** (days since grazing / fertilisation, sward height, dry-matter biomass, a flux-derived phytomass index) to the usual meteorological + temporal drivers improves reconstruction.
 
