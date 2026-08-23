@@ -306,10 +306,10 @@ df <- df %>%
     month_cos = cos(2 * pi * .mon / 12),
     
     .season = case_when(
-      .mon %in% c(12L, 1L, 2L) ~ "Winter",
-      .mon %in% c(3L,  4L, 5L) ~ "Spring",
-      .mon %in% c(6L,  7L, 8L) ~ "Summer",
-      TRUE                     ~ "Autumn"
+      .mon %in% c(11L, 12L, 1L) ~ "Winter",
+      .mon %in% c(2L,  3L, 4L) ~ "Spring",
+      .mon %in% c(5L,  6L, 7L) ~ "Summer",
+      .mon %in% c(8L,  9L, 10L) ~ "Autumn"
     ),
     Winter = as.integer(.season == "Winter"),
     Spring = as.integer(.season == "Spring"),
