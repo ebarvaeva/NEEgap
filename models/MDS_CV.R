@@ -54,7 +54,9 @@ prepare_reddyproc_input <- function(source_df, target_col,
                                   Tair = dplyr::all_of(temp_col),
                                   VPD  = dplyr::all_of(vpd_col)),
       by = c("DateTime" = "timestamp")) %>%
-    dplyr::mutate(Year = lubridate::year(DateTime),
+    dplyr::mutate(Rg   = Rg / (4.57 * 0.45),
+                  VPD  = VPD / 100,
+                  Year = lubridate::year(DateTime),
                   DoY  = lubridate::yday(DateTime),
                   Hour = lubridate::hour(DateTime) + lubridate::minute(DateTime) / 60)
 }
@@ -78,11 +80,11 @@ run_mds_for_gap_size <- function(df_cv, gap_size_cat) {
   gap_labels <- names(df_cv)[grepl(paste0("^", gap_size_cat, "\\d+$"), names(df_cv))]
   gap_labels <- gap_labels[order(as.integer(sub(gap_size_cat, "", gap_labels)))]
   if (!length(gap_labels)) return(df_cv)
-
+  
   # output column that will hold this size class's predictions
   pred_col          <- paste0("NEE_", gap_size_cat, "_mds_predicted")
   df_cv[[pred_col]] <- NA_real_
-
+  
   # baseline pass fills the genuinely missing NEE_orig rows
   baseline_preds <- tryCatch({
     eddy_base <- prepare_reddyproc_input(df_cv, target_col = "NEE_orig")
@@ -92,13 +94,13 @@ run_mds_for_gap_size <- function(df_cv, gap_size_cat) {
   real_na_rows <- which(!is.finite(df_cv$NEE_orig))
   if (length(real_na_rows))
     df_cv[[pred_col]][real_na_rows] <- baseline_preds[real_na_rows]
-
+  
   for (gap_lbl in gap_labels) {
     masked_nee <- paste0("NEE_", gap_lbl)   # NEE with this gap blanked out
     if (!masked_nee %in% names(df_cv)) next
     gap_rows <- which(df_cv[[gap_lbl]] %in% c(TRUE, 1))
     if (!length(gap_rows)) next
-
+    
     # per-gap MDS predictions, kept only on the gap rows
     gap_preds <- tryCatch({
       eddy_in <- prepare_reddyproc_input(df_cv, target_col = masked_nee)
