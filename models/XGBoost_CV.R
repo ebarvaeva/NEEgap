@@ -125,7 +125,7 @@ save_xgb_boosting_curves <- function(trained_xgb, gap_size_cat, gap_label) {
 
 # train one XGBoost per gap of a size class and write predictions into the gap rows
 run_xgb_for_gap_size <- function(flux_data, gap_size_cat, feature_cols,
-                                 val_frac = 0.10, n_rounds = 100L, seed = 42L) {
+                                 val_frac = 0.10, n_rounds = 500L, seed = 42L) {
   # gap-flag columns for this size class (S1, S2, …), ordered numerically
   gap_labels <- names(flux_data)[grepl(paste0("^", gap_size_cat, "\\d+$"), names(flux_data))]
   gap_labels <- gap_labels[order(as.integer(sub(gap_size_cat, "", gap_labels)))]
@@ -145,21 +145,15 @@ run_xgb_for_gap_size <- function(flux_data, gap_size_cat, feature_cols,
     gap_rows <- which(flux_data[[gap_lbl]] %in% c(TRUE, 1))  # blanked rows -> prediction targets
     if (length(obs_rows) < 10 || !length(gap_rows)) next     # skip gaps too small to train/predict
     
-    # stratified train/validation split of the observed rows
-    spl <- stratified_train_val_split(flux_data, obs_rows, val_frac, seed)
-    tr <- spl$train_rows; vr <- spl$val_rows
-    if (length(tr) < 5 || !length(vr)) next
-    
-    # train/validation/test matrices
-    dtrain <- xgboost::xgb.DMatrix(data = make_xgb_matrix(flux_data, tr, feats),       label = as.numeric(flux_data[[masked_nee]][tr]), missing = NA_real_)
-    dval   <- xgboost::xgb.DMatrix(data = make_xgb_matrix(flux_data, vr, feats),       label = as.numeric(flux_data[[masked_nee]][vr]), missing = NA_real_)
+    # train on ALL observed rows (parity with RF); overfitting is handled by the
+    # regularised objective + shrinkage + column subsampling (Chen & Guestrin 2016)
+    dtrain <- xgboost::xgb.DMatrix(data = make_xgb_matrix(flux_data, obs_rows, feats),
+                                   label = as.numeric(flux_data[[masked_nee]][obs_rows]), missing = NA_real_)
     dtest  <- xgboost::xgb.DMatrix(data = make_xgb_matrix(flux_data, gap_rows, feats), missing = NA_real_)
     
-    # train, save the boosting curve, then predict the blanked rows
     set.seed(seed)
     xgb_model <- xgboost::xgb.train(params = xgb_params, data = dtrain, nrounds = as.integer(n_rounds),
-                                    watchlist = list(train = dtrain, eval = dval), verbose = 0)
-    save_xgb_boosting_curves(xgb_model, gap_size_cat, gap_lbl)
+                                    verbose = 0)
     flux_data[[pred_col]][gap_rows] <- as.numeric(predict(xgb_model, dtest))
   }
   flux_data
@@ -170,7 +164,7 @@ flux_data <- df
 
 # run every gap-size class in turn: very-large, large, medium, small
 for (cat in c("VL", "L", "M", "S"))
-  flux_data <- run_xgb_for_gap_size(flux_data, cat, predictors, n_rounds = 100L)
+  flux_data <- run_xgb_for_gap_size(flux_data, cat, predictors, n_rounds = 500L)
 
 # save the gap-filled NEE predictions
 saveRDS(flux_data, file.path(RESULTS_DIR, "df_cv_all_predictions.rds"))
