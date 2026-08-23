@@ -82,21 +82,21 @@ compute_reco_gpp_from_nee_orig <- function(flux_data, ppfd_night_thr = 10,
   is_day   <- is.finite(ppfd_vec) & ppfd_vec > ppfd_night_thr
   reco_out <- rep(NA_real_, n)
   gpp_out  <- rep(NA_real_, n)
-
+  
   for (rg_id in sort(unique(stats::na.omit(regrowth)))) {
     rip        <- which(regrowth == rg_id)
     train_rows <- rip[is.finite(nee_vec[rip])]
     if (length(train_rows) < 10) next
-
+    
     night_rows <- train_rows[is_night[train_rows] & nee_vec[train_rows] > 0]
     R10 <- if (length(night_rows) > 0) {
       arr <- arrhenius_temperature_response(temp_vec[night_rows])
       d   <- sum(arr^2, na.rm = TRUE)
       if (is.finite(d) && d > 0) sum(nee_vec[night_rows] * arr, na.rm = TRUE) / d else 1.0
     } else 1.0
-
+    
     reco_out[rip] <- R10 * arrhenius_temperature_response(temp_vec[rip])
-
+    
     day_rows <- train_rows[is_day[train_rows] & nee_vec[train_rows] < 0]
     if (length(day_rows) > 10) {
       gpp_obs <- R10 * arrhenius_temperature_response(temp_vec[day_rows]) - nee_vec[day_rows]
@@ -106,13 +106,13 @@ compute_reco_gpp_from_nee_orig <- function(flux_data, ppfd_night_thr = 10,
         error = function(e) list(par = gpp_init))
       gpp_params <- if (!is.null(opt$par)) opt$par else gpp_init
     } else gpp_params <- gpp_init
-
+    
     gpp_period        <- light_response_gpp(gpp_params, ppfd_vec[rip])
     gpp_period[!is_day[rip]]         <- 0
     gpp_period[is.na(ppfd_vec[rip])] <- NA_real_
     gpp_out[rip] <- gpp_period
   }
-
+  
   flux_data$Reco_orig <- reco_out
   flux_data$GPP_orig  <- gpp_out
   flux_data
@@ -131,12 +131,12 @@ run_minirec_for_gap_size <- function(flux_data, gap_size_cat,
   stopifnot(ppfd_col %in% names(flux_data),
             temp_col %in% names(flux_data),
             regrowth_col %in% names(flux_data))
-
+  
   # gap-flag columns for this size class (S1, S2, …), ordered numerically
   gap_labels <- names(flux_data)[grepl(paste0("^", gap_size_cat, "\\d+$"), names(flux_data))]
   gap_labels <- gap_labels[order(as.integer(sub(gap_size_cat, "", gap_labels)))]
   if (!length(gap_labels)) return(flux_data)
-
+  
   # output columns that will hold this size class's predictions
   nee_pred_col  <- paste0("NEE_",  gap_size_cat, "_minirec_predicted")
   reco_pred_col <- paste0("Reco_", gap_size_cat, "_minirec_predicted")
@@ -144,11 +144,11 @@ run_minirec_for_gap_size <- function(flux_data, gap_size_cat,
   flux_data[[nee_pred_col]]  <- NA_real_
   flux_data[[reco_pred_col]] <- NA_real_
   flux_data[[gpp_pred_col]]  <- NA_real_
-
+  
   for (gap_lbl in gap_labels) {
     masked_nee <- paste0("NEE_", gap_lbl)   # NEE with this gap blanked out
     if (!masked_nee %in% names(flux_data)) next
-
+    
     ppfd     <- as.numeric(flux_data[[ppfd_col]])
     temp     <- as.numeric(flux_data[[temp_col]])
     nee_obs  <- as.numeric(flux_data[[masked_nee]])
@@ -157,17 +157,17 @@ run_minirec_for_gap_size <- function(flux_data, gap_size_cat,
     is_obs   <- is.finite(nee_obs)
     is_night <- is.finite(ppfd) & ppfd < ppfd_night_thr
     is_day   <- is.finite(ppfd) & ppfd > ppfd_night_thr
-
+    
     n             <- nrow(flux_data)
     nee_pred_all  <- rep(NA_real_, n)
     reco_pred_all <- rep(NA_real_, n)
     gpp_pred_all  <- rep(NA_real_, n)
-
+    
     for (rg_id in sort(unique(stats::na.omit(regrowth)))) {
       rows_in_period  <- which(regrowth == rg_id)
       train_in_period <- intersect(rows_in_period, which(is_obs))
       if (length(train_in_period) < 10) next
-
+      
       # Step 1 — R10 from nighttime training rows (NEE > 0)
       night_train <- train_in_period[is_night[train_in_period] & nee_obs[train_in_period] > 0]
       R10 <- if (length(night_train) > 0) {
@@ -177,9 +177,9 @@ run_minirec_for_gap_size <- function(flux_data, gap_size_cat,
           sum(nee_obs[night_train] * arr, na.rm = TRUE) / denom
         else 1.0
       } else 1.0
-
+      
       reco_period <- R10 * arrhenius_temperature_response(temp[rows_in_period])
-
+      
       # Step 2 — GPP light-response from daytime training rows (NEE < 0)
       day_train <- train_in_period[is_day[train_in_period] & nee_obs[train_in_period] < 0]
       if (length(day_train) > 10) {
@@ -190,16 +190,16 @@ run_minirec_for_gap_size <- function(flux_data, gap_size_cat,
           error = function(e) list(par = GPP_INIT_PARAMS))
         gpp_params <- if (!is.null(opt$par)) opt$par else GPP_INIT_PARAMS
       } else gpp_params <- GPP_INIT_PARAMS
-
+      
       gpp_period <- light_response_gpp(gpp_params, ppfd[rows_in_period])
       gpp_period[!is_day[rows_in_period]]         <- 0
       gpp_period[is.na(ppfd[rows_in_period])]     <- NA_real_
-
+      
       reco_pred_all[rows_in_period] <- reco_period
       gpp_pred_all[rows_in_period]  <- gpp_period
       nee_pred_all[rows_in_period]  <- reco_period - gpp_period
     }
-
+    
     # fallback: global fit for rows not covered by any regrowth period
     need_fallback <- which(is.na(nee_pred_all) & is.finite(temp))
     if (length(need_fallback) > 0) {
@@ -210,7 +210,7 @@ run_minirec_for_gap_size <- function(flux_data, gap_size_cat,
         R10g  <- if (is.finite(dg) && dg > 0)
           sum(nee_obs[night_all] * arr_g, na.rm = TRUE) / dg else 1.0
         reco_fb <- R10g * arrhenius_temperature_response(temp[need_fallback])
-
+        
         day_all <- which(is_day & is_obs & nee_obs < 0)
         if (length(day_all) > 20) {
           gpp_obs_g <- R10g * arrhenius_temperature_response(temp[day_all]) - nee_obs[day_all]
@@ -231,7 +231,7 @@ run_minirec_for_gap_size <- function(flux_data, gap_size_cat,
         }
       }
     }
-
+    
     flux_data[[nee_pred_col]][gap_rows]  <- nee_pred_all[gap_rows]
     flux_data[[reco_pred_col]][gap_rows] <- reco_pred_all[gap_rows]
     flux_data[[gpp_pred_col]][gap_rows]  <- gpp_pred_all[gap_rows]
