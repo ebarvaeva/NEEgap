@@ -1,4 +1,4 @@
-# graph_colour_individual_gaps.R — Per-gap MAE/RMSE/R² plots, season & grazing encoded
+# metrics_for_individual_gaps_graphs.R — Per-gap MAE/RMSE/R² plots, season & grazing encoded
 #
 # Reads the per-gap and pooled metric CSVs written by metrics_graphs.R
 # (no recomputation) plus one reference df_cv_all_predictions.rds per site to recover

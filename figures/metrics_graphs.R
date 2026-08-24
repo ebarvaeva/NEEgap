@@ -1,4 +1,4 @@
-# compute_metrics_and_plots.R — Gap-filling metrics + overall-metric plots (run first)
+# metrics_graphs.R — Gap-filling metrics + overall-metric plots (run first)
 #
 # Reads df_cv_all_predictions.rds from every model result folder, computes per-gap and pooled MAE / RMSE / R2
 # for NEE, writes the CSVs that the other metrics scripts consume, and draws the

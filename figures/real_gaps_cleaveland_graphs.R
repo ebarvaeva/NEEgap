@@ -1,4 +1,4 @@
-# plot_real_gaps_cleaveland.R — Real-gap length distribution (paper Fig 4)
+# real_gaps_cleaveland_graphs.R — Real-gap length distribution (paper Fig 4)
 #
 # Reconstructs the real (measurement) gaps in each
 # site's NEE series, bins their lengths into 1-day bins (0-1 d ... 29-30 d, plus

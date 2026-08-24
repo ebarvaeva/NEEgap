@@ -1,4 +1,4 @@
-# timeseries_nee.R — JC1-vs-JC2 NEE figures for the paper (Figs 1, 2, 3)
+# timeseries_nee_graphs.R — JC1-vs-JC2 NEE figures for the paper (Figs 1, 2, 3)
 #
 # Loads both sites' prepared NEE series and draws:
 #   Fig 1 — NEE time series per site with grazing/fertiliser event lines

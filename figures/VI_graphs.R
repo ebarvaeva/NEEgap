@@ -1,4 +1,4 @@
-# VI_graphs_compact.R — RF variable-importance summary boxplots + CSV summaries
+# VI_graphs.R — RF variable-importance summary boxplots + CSV summaries
 #
 # Reads pre-computed RF variable-importance RDS files (no model re-fitting) and, for
 # every retained predictor, draws the full distribution of relative importance pooled
