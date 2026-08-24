@@ -43,15 +43,15 @@ NEEgap/
 │   ├── run_benchmark_models/   JC{1,2}_{MDS,miniRECgap}.R               (4 scripts)
 │   └── run_management_effect/  run_management_effect_{RF,MLP,XGBoost,PI}.R
 │
-└── figures/                                   all paper figures from saved predictions
+└── figures/                                   paper figures + summary tables
     ├── metrics_graphs.R                       MAE/RMSE/R² + writes graphs/metrics_csv/  (run first)
     ├── metrics_for_individual_gaps_graphs.R   per-gap plots, season/grazing encoded
     ├── management_effect_graphs.R             % MAE-reduction heatmaps
     ├── VI_graphs.R                            RF variable-importance boxplots
-    ├── PI_threshold_graphs.R                  PI: PPFD > 400 vs > 700
-    ├── artificial_gaps_graphs.R               gap positions on the NEE series
-    ├── real_gaps_cleaveland_graphs.R          real gap-length distribution
-    └── timeseries_nee_graphs.R                NEE time series + JC1-vs-JC2 scatter
+    ├── real_gaps_cleaveland_graphs.R          real gap-length distribution (Cleveland dot plot)
+    ├── timeseries_nee_graphs.R                NEE time series + JC1-vs-JC2 scatter
+    ├── wind_rose_graphs.R                     wind roses per site × year
+    └── montly_temperature_rainfall_table.R    monthly temp/rainfall table (console only)
 ```
 
 `results/` (model predictions) and `graphs/` (figures) are created automatically by the run and figure scripts.
@@ -87,11 +87,11 @@ source("run_models/run_management_effect/run_management_effect_RF.R")   # + MLP,
 source("figures/metrics_graphs.R")
 source("figures/metrics_for_individual_gaps_graphs.R")
 source("figures/management_effect_graphs.R")
-source("figures/VI_graphs.R")                    # independent — any order
-source("figures/PI_threshold_graphs.R")          # independent
-source("figures/artificial_gaps_graphs.R")       # independent
-source("figures/real_gaps_cleaveland_graphs.R")  # independent
-source("figures/timeseries_nee_graphs.R")        # independent
+source("figures/VI_graphs.R")                          # independent — any order
+source("figures/real_gaps_cleaveland_graphs.R")        # independent
+source("figures/timeseries_nee_graphs.R")              # independent
+source("figures/wind_rose_graphs.R")                   # independent
+source("figures/montly_temperature_rainfall_table.R")  # independent — prints a table
 ```
 
 ---
@@ -104,7 +104,7 @@ source("figures/timeseries_nee_graphs.R")        # independent
 
 **`run_models/`** — entry points that load `{SITE}_cv.rds` and call a model. `run_ML_models/` holds the 12 machine-learning runs (site × model × managed/unmanaged); `run_benchmark_models/` holds MDS and miniRECgap; `run_management_effect/` runs the feature-addition study (BASE predictors + one management variable, looping over both sites).
 
-**`figures/`** — every figure from the saved predictions. `metrics_graphs.R` computes MAE/RMSE/R² (pooled and split by ≤30 d / >30 d since grazing) and writes `graphs/metrics_csv/`, which `metrics_for_individual_gaps_graphs.R` and `management_effect_graphs.R` consume; the remaining five scripts are independent.
+**`figures/`** — every paper figure (plus one console summary table), built from the saved predictions and the prepared / QC data. `metrics_graphs.R` computes MAE/RMSE/R² (pooled and split by ≤30 d / >30 d since grazing) and writes `graphs/metrics_csv/`, which `metrics_for_individual_gaps_graphs.R` and `management_effect_graphs.R` consume; the remaining five scripts (`VI_graphs.R`, `real_gaps_cleaveland_graphs.R`, `timeseries_nee_graphs.R`, `wind_rose_graphs.R`, `montly_temperature_rainfall_table.R`) are independent and run in any order.
 
 ---
 
