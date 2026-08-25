@@ -162,4 +162,4 @@ install.packages(c(
 ))
 ```
 
-The MLP scripts additionally need a working Python/TensorFlow environment behind `reticulate`.
+The MLP scripts additionally need a working Python (v.3.10.12), TensorFlow (v.2.19.1) and Keras (v.3.10.0) environments behind `reticulate`.
