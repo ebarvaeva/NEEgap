@@ -1,10 +1,10 @@
 # NEEgap
 
-Code for the study **"Incorporating Management and Canopy Information into Machine-Learning Gap-Filling of Eddy-Covariance Net Ecosystem Exchange in Irish Grasslands"** (E.Barvaeva, A.Parnell, R.Murphy, K.Domijan).
+Code for the study **"Incorporating Management and Canopy Information into Machine-Learning Gap-Filling of Eddy-Covariance Net Ecosystem Exchange in Irish Grasslands"** (Enola Barvaeva, Andrew Parnell, Rachael Murphy, Morad Mirzaei, Ryan Burger, Katarina Domijan).
 
-It gap-fills half-hourly **NEE** (net ecosystem exchange of CO₂) at two rotationally grazed dairy-grassland eddy-covariance towers at Johnstown Castle — **JC1** (2020, 2023, 2024) and **JC2** (2023, 2024) — and tests whether adding **management and canopy predictors** (days since grazing / fertilisation, sward height, dry-matter biomass, a flux-derived phytomass index) to the usual meteorological + temporal drivers improves reconstruction.
+It gap-fills half-hourly **NEE** at two rotationally grazed dairy-grassland eddy-covariance towers at Johnstown Castle — **JC1** (2020, 2023, 2024) and **JC2** (2023, 2024) — and tests whether adding **management and canopy predictors** (days since grazing / fertilisation, sward height, dry-matter biomass, a flux-derived phytomass index) to the usual meteorological plus temporal drivers improves reconstruction.
 
-Five models are compared under a **leave-one-gap-out cross-validation** across four gap lengths (S ≈ 1 d, M ≈ 7 d, L ≈ 14 d, VL ≈ 30 d): Random Forest, XGBoost, MLP, and two process-based benchmarks (MDS, miniRECgap).
+Five models are compared under a **leave-one-gap-out cross-validation** across four gap lengths (S ≈ 1 d, M ≈ 7 d, L ≈ 14 d, VL ≈ 30 d): Random Forest (RF), XGBoost, multilayer perceptron (MLP), and two process-based benchmarks, Marginal Distribution Sampling (MDS) from REddyProc and miniRECgap.
 
 ---
 
@@ -20,7 +20,7 @@ NEEgap/
 │   │       ├── calc_footprint_FFP_mod.R       2-D footprint model (Kljun 2015)
 │   │       ├── pblh_calc.R                    boundary-layer height
 │   │       ├── utilities.R                    spatial-grid helpers
-│   │       └── nasco_site_list_wkt.csv        site boundary polygons — NOT included
+│   │       └── nasco_site_list_wkt.csv        field boundary polygons — not included (see Data availability)
 │   ├── 01_run_data_preparation.R             master runner for 02–07
 │   ├── 02_timestamp_correction.R             full 30-min grid, gaps → NA rows
 │   ├── 03_predictors_meteo.R                 PPFD, Rg, Temp, RH, VPD, rain, time encodings
@@ -39,28 +39,28 @@ NEEgap/
 │   └── miniRECgap_CV.R   MDS_CV.R
 │
 ├── run_models/
-│   ├── run_ML_models/          JC{1,2}_{rf,mlp,xgb}_{mng,nomng}.R        (12 scripts)
-│   ├── run_benchmark_models/   JC{1,2}_{MDS,miniRECgap}.R               (4 scripts)
+│   ├── run_ML_models/          JC{1,2}_{rf,mlp,xgb}_{mng,nomng}.R       
+│   ├── run_benchmark_models/   JC{1,2}_{MDS,miniRECgap}.R              
 │   └── run_management_effect/  run_management_effect_{RF,MLP,XGBoost,PI}.R
 │
 └── figures/                                   paper figures + summary tables
-    ├── metrics_graphs.R                       MAE/RMSE/R² + writes graphs/metrics_csv/  (run first)
+    ├── metrics_graphs.R                       MAE/RMSE/R² + writes graphs/metrics_csv/  
     ├── metrics_for_individual_gaps_graphs.R   per-gap plots, season/grazing encoded
     ├── management_effect_graphs.R             % MAE-reduction heatmaps
     ├── VI_graphs.R                            RF variable-importance boxplots
     ├── real_gaps_cleaveland_graphs.R          real gap-length distribution (Cleveland dot plot)
     ├── timeseries_nee_graphs.R                NEE time series + JC1-vs-JC2 scatter
     ├── wind_rose_graphs.R                     wind roses per site × year
-    └── montly_temperature_rainfall_table.R    monthly temp/rainfall table (console only)
+    └── montly_temperature_rainfall_table.R    monthly temp/rainfall table 
 ```
 
-`results/` (model predictions) and `graphs/` (figures) are created automatically by the run and figure scripts.
+`results/` (model predictions) and `graphs/` are created automatically by the run and figure scripts.
 
 ---
 
 ## Quick start
 
-Run from the repository root so `here::here()` resolves. Install the packages (see **Packages**) and place the `data/` tree (see **Data layout**) first; Stage 0 also needs `grid_qc/nasco_site_list_wkt.csv`.
+Run from the repository root so `here::here()` resolves. Install the packages (see **Requirements**) and place the `data/` tree (see **Data layout**) first; Stage 0 also needs `grid_qc/nasco_site_list_wkt.csv`.
 
 ```r
 # 0 — Quality control    raw EddyPro exports → data/data_qc/results_qc_{SITE}_{YEAR}/
@@ -104,19 +104,25 @@ source("figures/montly_temperature_rainfall_table.R")  # independent — prints 
 
 **`run_models/`** — entry points that load `{SITE}_cv.rds` and call a model. `run_ML_models/` holds the 12 machine-learning runs (site × model × managed/unmanaged); `run_benchmark_models/` holds MDS and miniRECgap; `run_management_effect/` runs the feature-addition study (BASE predictors + one management variable, looping over both sites).
 
-**`figures/`** — every paper figure (plus one console summary table), built from the saved predictions and the prepared / QC data. `metrics_graphs.R` computes MAE/RMSE/R² (pooled and split by ≤30 d / >30 d since grazing) and writes `graphs/metrics_csv/`, which `metrics_for_individual_gaps_graphs.R` and `management_effect_graphs.R` consume; the remaining five scripts (`VI_graphs.R`, `real_gaps_cleaveland_graphs.R`, `timeseries_nee_graphs.R`, `wind_rose_graphs.R`, `montly_temperature_rainfall_table.R`) are independent and run in any order.
+**`figures/`** — every paper related figures and tables, built from the saved predictions and the prepared / QC data. `metrics_graphs.R` computes MAE/RMSE/R² (pooled and split by ≤30 d / >30 d since grazing) and writes `graphs/metrics_csv/`, which `metrics_for_individual_gaps_graphs.R` and `management_effect_graphs.R` consume; the remaining five scripts (`VI_graphs.R`, `real_gaps_cleaveland_graphs.R`, `timeseries_nee_graphs.R`, `wind_rose_graphs.R`, `montly_temperature_rainfall_table.R`) are independent and run in any order.
+
+---
+
+## Data availability
+
+The eddy-covariance flux data, management records, and field boundary polygons (`nasco_site_list_wkt.csv`) are **not included** in this repository. They are available on reasonable request from **Ryan Burger** (ryan.burger@teagasc.ie).
 
 ---
 
 ## Data layout
 
-Data files are **not included**. Place them under `data/`:
+Data files are **not included** (see [Data availability](#data-availability)). Place them under `data/`:
 
 ```text
-data/                                          (not in the repo)
+data/                                          
 ├── raw_data/
 │   ├── {SITE}_{2023,2024}_{eddypro,biomet,meta,fluxnet}.xlsx
-│   └── JC1_2020_{eddypro,biomet,extra,AGC}.xlsx          open-path year
+│   └── JC1_2020_{eddypro,biomet,extra,AGC}.xlsx          
 ├── meteireann_data/
 │   ├── met_hourly.csv                          hourly Temp, RH, rain
 │   └── solar_hourly.xlsx                        hourly global radiation
@@ -140,10 +146,20 @@ data/                                          (not in the repo)
 
 ---
 
-## Packages
+## Requirements
+
+The scripts work with R version **R 4.6.1**.
 
 ```r
-install.packages(c("here","tidyverse","lubridate","zoo","hms","readxl","glue","rlang","scales","patchwork","sf","ranger","xgboost","REddyProc","reticulate","tensorflow","keras3"))
+install.packages(c(
+  "here", "tidyverse", "lubridate", "zoo", "hms", "readxl",
+  "glue", "rlang", "scales",              # utilities (bundled with tidyverse)
+  "patchwork", "ggh4x",                   # figure layout + faceting extensions
+  "sf", "sp", "raster", "stars",          # spatial grid / footprint handling
+  "ranger", "xgboost",                    # RF, XGBoost
+  "REddyProc",                            # MDS benchmark + u* tools
+  "reticulate", "tensorflow", "keras3"    # MLP (Python/TensorFlow backend)
+))
 ```
 
 The MLP scripts additionally need a working Python/TensorFlow environment behind `reticulate`.
